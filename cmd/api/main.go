@@ -4,15 +4,18 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/srijan-raghavula/colearning-agent/internal/interfaces/httpapi"
+	"github.com/srijan-raghavula/colearning-agent/src/bootstrap"
+	"github.com/srijan-raghavula/colearning-agent/src/routes"
 )
 
 func main() {
-	mux := http.NewServeMux()
-	httpapi.RegisterRoutes(mux)
+	app := bootstrap.NewApp()
 
-	log.Println("colearning-agent API listening on :8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	mux := http.NewServeMux()
+	routes.Register(mux, app.Routes)
+
+	log.Printf("colearning-agent API listening on %s", app.Config.Address)
+	if err := http.ListenAndServe(app.Config.Address, mux); err != nil {
 		log.Fatal(err)
 	}
 }

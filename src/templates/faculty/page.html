@@ -1,0 +1,24 @@
+{{define "faculty/page.html"}}
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Faculty Portal</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <h1>Faculty Portal</h1>
+  <div
+    id="summary"
+    hx-get="/faculty/summary?role=faculty"
+    hx-trigger="load, every 20s"
+    hx-swap="outerHTML">Loading summary...</div>
+
+  <div
+    id="missing"
+    hx-get="/faculty/missing?role=faculty"
+    hx-trigger="load, every 20s"
+    hx-swap="outerHTML">Loading missing work...</div>
+</body>
+</html>
+{{end}}

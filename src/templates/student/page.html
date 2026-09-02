@@ -1,0 +1,33 @@
+{{define "student/page.html"}}
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Student Portal</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <h1>Student Portal</h1>
+  <p>Student: {{.StudentID}}</p>
+
+  <form hx-post="/student/submit?role=student" hx-target="#submissions" hx-swap="outerHTML" method="post">
+    <input type="hidden" name="student_id" value="{{.StudentID}}">
+    <label>Submission ID <input name="id" required></label>
+    <label>Subject <input name="subject_id" required></label>
+    <label>Topic <input name="topic_id" required></label>
+    <label>Title <input name="title" required></label>
+    <label>Attachment <input name="attachment"></label>
+    <label>Due At (RFC3339) <input name="due_at" value="2026-12-31T23:59:59Z" required></label>
+    <button type="submit">Submit Assessment</button>
+  </form>
+
+  <section
+    id="submissions"
+    hx-get="/student/submissions?role=student&student_id={{.StudentID}}"
+    hx-trigger="load"
+    hx-swap="outerHTML">
+    Loading submissions...
+  </section>
+</body>
+</html>
+{{end}}
