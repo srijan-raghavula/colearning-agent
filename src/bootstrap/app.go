@@ -30,6 +30,22 @@ func NewApp() App {
 		{ID: "SUB-004", StudentID: "S-002", SubjectID: "science", TopicID: "energy", Title: "Energy Report", Attachment: "energy.pdf", DueAt: now.Add(24 * time.Hour), SubmittedAt: now.Add(-1 * time.Hour), Status: domain.SubmissionStatusSubmitted},
 	}
 
+	// ── AI Evaluation Pipeline Assembly ──────────────────────────────────────
+	// Swap memory.NewStubAIGateway() for an OpenAI/Anthropic adapter here;
+	// no other code in the system needs to change — that's the value of the
+	// AIGateway port.
+	aiGateway := memory.NewStubAIGateway()
+	const subDimensionMax = 10.0
+
+	evalPipeline := service.NewStagedEvaluationPipeline(
+		service.NewAILogicEvaluator(aiGateway, subDimensionMax),
+		service.NewAIQualityEvaluator(aiGateway, subDimensionMax),
+		service.NewAIConceptGapEvaluator(aiGateway, subDimensionMax),
+		service.NewScoreGuardrail(),
+	)
+	_ = evalPipeline // pipeline available for injection into evaluation use-case
+
+	// Seed evaluations use the pure-math engine for bootstrap determinism
 	evaluationEngine := service.NewDefaultEvaluationEngine()
 	evaluations := []domain.Evaluation{
 		evaluationEngine.Evaluate(submissions[0], 18, 20, []domain.TopicScore{{Topic: "algebra", Score: 8, MaxPossible: 10}, {Topic: "functions", Score: 10, MaxPossible: 10}}),

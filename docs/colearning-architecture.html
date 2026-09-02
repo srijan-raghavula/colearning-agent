@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Human-AI Co-Learning Agent — System Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-0: #060D1A;
+  --bg-1: #0A1628;
+  --bg-2: #0F1D35;
+  --bg-3: #152340;
+  --bg-4: #1C2D4F;
+  --border: rgba(100,140,200,0.12);
+  --border-mid: rgba(100,140,200,0.22);
+  --border-hi: rgba(100,140,200,0.35);
+
+  --blue: #3B82F6;
+  --blue-lt: #93C5FD;
+  --blue-bg: rgba(59,130,246,0.08);
+  --blue-bd: rgba(59,130,246,0.25);
+
+  --violet: #7C3AED;
+  --violet-lt: #C4B5FD;
+  --violet-bg: rgba(124,58,237,0.08);
+  --violet-bd: rgba(124,58,237,0.28);
+
+  --teal: #0D9488;
+  --teal-lt: #5EEAD4;
+  --teal-bg: rgba(13,148,136,0.08);
+  --teal-bd: rgba(13,148,136,0.28);
+
+  --amber: #D97706;
+  --amber-lt: #FCD34D;
+  --amber-bg: rgba(217,119,6,0.08);
+  --amber-bd: rgba(217,119,6,0.28);
+
+  --t1: #DDE6F0;
+  --t2: #8FA7C4;
+  --t3: #4D6480;
+
+  --mono: 'JetBrains Mono', 'Courier New', monospace;
+  --sans: 'Inter', system-ui, sans-serif;
+  --r: 8px;
+  --rs: 4px;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg-0);
+  color: var(--t1);
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Blueprint grid */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(80,120,180,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(80,120,180,0.07) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.page {
+  position: relative;
+  z-index: 1;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 64px 48px 80px;
+}
+
+/* ── HERO ────────────────────────────────── */
+.hero {
+  margin-bottom: 80px;
+  padding-left: 20px;
+  border-left: 2px solid var(--blue);
+}
+.hero-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--blue-lt);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.hero-title {
+  font-size: 34px;
+  font-weight: 600;
+  color: var(--t1);
+  line-height: 1.15;
+  margin-bottom: 6px;
+}
+.hero-sub {
+  font-size: 15px;
+  color: var(--t2);
+  margin-bottom: 24px;
+  max-width: 64ch;
+}
+.badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.b {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 9px;
+  border-radius: 100px;
+  border: 1px solid;
+}
+.b-bl { color: var(--blue-lt); border-color: var(--blue-bd); background: var(--blue-bg); }
+.b-vi { color: var(--violet-lt); border-color: var(--violet-bd); background: var(--violet-bg); }
+.b-te { color: var(--teal-lt); border-color: var(--teal-bd); background: var(--teal-bg); }
+.b-am { color: var(--amber-lt); border-color: var(--amber-bd); background: var(--amber-bg); }
+
+/* ── SECTION FRAME ───────────────────────── */
+.section { margin-bottom: 72px; }
+.s-eye {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--t3);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.s-title {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--t1);
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.s-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── SYSTEM OVERVIEW ─────────────────────── */
+.sys-flow {
+  display: grid;
+  grid-template-columns: 1fr 28px 1fr 28px 1fr 28px 1fr;
+  align-items: stretch;
+  gap: 0;
+}
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--t3);
+  font-size: 14px;
+}
+.fl {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 18px 14px;
+}
+.fl-num { font-family: var(--mono); font-size: 9px; color: var(--t3); margin-bottom: 5px; }
+.fl-title { font-size: 12px; font-weight: 500; color: var(--t1); margin-bottom: 10px; }
+.fl-items { display: flex; flex-direction: column; gap: 5px; }
+.fi {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 4px 8px;
+  border-radius: var(--rs);
+  color: var(--t2);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+}
+.fl-fe { border-top: 2px solid var(--teal); }
+.fl-pr { border-top: 2px solid var(--blue); }
+.fl-co { border-top: 2px solid var(--violet); }
+.fl-in { border-top: 2px solid var(--amber); }
+
+.note {
+  margin-top: 12px;
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-bd);
+  border-radius: var(--rs);
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t2);
+  line-height: 1.7;
+}
+.note::before { content: '// '; color: var(--blue-lt); }
+
+/* ── PIPELINE ────────────────────────────── */
+.pipeline { display: flex; flex-direction: column; }
+
+.ps {
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.ps:first-child { border-radius: var(--r) var(--r) 0 0; }
+.ps:last-child { border-radius: 0 0 var(--r) var(--r); }
+.ps + .ps { border-top: none; }
+
+.ps-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.ps-n { font-family: var(--mono); font-size: 9px; min-width: 50px; }
+.ps-t { font-size: 13px; font-weight: 500; color: var(--t1); flex: 1; }
+.ps-bd { padding: 16px 20px; }
+
+/* stage tints */
+.ps1 { background: var(--bg-2); }
+.ps1 .ps-hd { background: linear-gradient(90deg, var(--blue-bg), transparent 60%); }
+.ps1 .ps-n { color: var(--blue-lt); }
+.ps2 { background: var(--bg-2); }
+.ps2 .ps-hd { background: linear-gradient(90deg, var(--violet-bg), transparent 60%); }
+.ps2 .ps-n { color: var(--violet-lt); }
+.ps3 { background: var(--bg-2); }
+.ps3 .ps-hd { background: linear-gradient(90deg, var(--teal-bg), transparent 60%); }
+.ps3 .ps-n { color: var(--teal-lt); }
+.ps4 { background: var(--bg-2); }
+.ps4 .ps-hd { background: linear-gradient(90deg, var(--amber-bg), transparent 60%); }
+.ps4 .ps-n { color: var(--amber-lt); }
+
+/* Stage connector */
+.ps-gap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 26px;
+  position: relative;
+}
+.ps-gap::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border-mid);
+}
+.ps-gap-dot {
+  width: 6px; height: 6px;
+  background: var(--border-hi);
+  border-radius: 50%;
+  position: relative;
+  z-index: 1;
+}
+
+/* Stage 1 layout */
+.s1-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.s1-box {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--rs);
+  padding: 10px 14px;
+}
+.s1-box-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--t3);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.s1-box-val {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t1);
+  line-height: 1.6;
+}
+.s1-center {
+  flex: 2;
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-bd);
+  border-radius: var(--rs);
+  padding: 10px 14px;
+}
+.s1-center-label { font-family: var(--mono); font-size: 8px; color: var(--blue-lt); margin-bottom: 5px; text-transform: uppercase; }
+.s1-center-body { font-size: 11px; color: var(--t2); line-height: 1.6; }
+.arrow-txt { color: var(--t3); font-size: 14px; flex-shrink: 0; }
+
+/* Stage 2 goroutines */
+.goroutines { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.goroutine {
+  background: var(--violet-bg);
+  border: 1px solid var(--violet-bd);
+  border-radius: var(--r);
+  padding: 12px;
+}
+.go-label { font-family: var(--mono); font-size: 8px; color: var(--violet-lt); margin-bottom: 4px; text-transform: uppercase; }
+.go-name { font-size: 12px; font-weight: 500; color: var(--t1); margin-bottom: 6px; }
+.go-dim { font-family: var(--mono); font-size: 9px; color: var(--t3); }
+.go-ch { font-family: var(--mono); font-size: 9px; color: var(--violet-lt); margin-top: 4px; }
+
+.ch-label { text-align: center; font-family: var(--mono); font-size: 9px; color: var(--t3); margin: 4px 0 8px; }
+.channels { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.channel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 10px;
+  background: var(--bg-3);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--rs);
+}
+.ch-ico { font-family: var(--mono); font-size: 10px; color: var(--violet-lt); }
+.ch-nm { font-family: var(--mono); font-size: 10px; color: var(--t2); }
+
+/* Stage 3 weights */
+.s3-row { display: flex; gap: 16px; align-items: flex-start; }
+.weights { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.w-item { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; }
+.w-bar-wrap { width: 80px; height: 5px; background: var(--bg-4); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+.w-bar { height: 100%; border-radius: 3px; }
+.w-lbl { color: var(--t2); }
+.w-val { color: var(--t1); font-weight: 500; min-width: 28px; }
+.guardrail {
+  flex: 1;
+  background: var(--teal-bg);
+  border: 1px solid var(--teal-bd);
+  border-radius: var(--r);
+  padding: 14px;
+}
+.guardrail-label { font-family: var(--mono); font-size: 8px; color: var(--teal-lt); margin-bottom: 8px; text-transform: uppercase; }
+.guardrail-body { font-size: 11px; color: var(--t2); line-height: 1.8; }
+.mono-inline { font-family: var(--mono); color: var(--t1); font-size: 10px; }
+
+/* Stage 4 outputs */
+.outputs { display: flex; gap: 10px; }
+.out-card {
+  flex: 1;
+  padding: 12px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+}
+.out-lbl { font-family: var(--mono); font-size: 8px; color: var(--t3); margin-bottom: 5px; text-transform: uppercase; }
+.out-name { font-size: 12px; font-weight: 500; }
+
+/* ── LAYER STACK ─────────────────────────── */
+.stack { display: flex; flex-direction: column; gap: 3px; }
+.srow {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--rs);
+  overflow: hidden;
+}
+.slc { padding: 12px 16px; display: flex; align-items: center; }
+.sl { font-family: var(--mono); font-size: 11px; font-weight: 500; }
+.scc {
+  padding: 12px 16px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 3px 8px;
+  border-radius: 100px;
+  border: 1px solid;
+}
+.chip-gr { color: var(--t2); border-color: var(--border-hi); background: var(--bg-3); }
+.note-inline { font-size: 10px; color: var(--t3); margin-left: 4px; font-style: italic; }
+
+/* ── DUAL PORTALS ────────────────────────── */
+.portals { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.portal {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 20px;
+}
+.portal-role {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--t1);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.feats { display: flex; flex-direction: column; gap: 5px; }
+.feat {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--t2);
+  padding: 7px 10px;
+  background: var(--bg-3);
+  border-radius: var(--rs);
+  line-height: 1.5;
+}
+.feat-ico { font-size: 11px; flex-shrink: 0; margin-top: 1px; }
+
+/* ── GATEWAY ADAPTERS ────────────────────── */
+.gw-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.gw-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 16px;
+}
+.gw-label { font-family: var(--mono); font-size: 8px; color: var(--t3); margin-bottom: 8px; text-transform: uppercase; }
+.gw-name { font-family: var(--mono); font-size: 11px; margin-bottom: 10px; }
+.code-block {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--rs);
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--t2);
+  line-height: 1.9;
+}
+.adapters { display: flex; flex-direction: column; gap: 6px; }
+.adp {
+  border-radius: var(--rs);
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  border: 1px solid;
+}
+
+/* ── DEPLOY ──────────────────────────────── */
+.deploy-outer {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 22px;
+}
+.host-wrap {
+  border: 1px dashed var(--border-mid);
+  border-radius: var(--r);
+  padding: 20px;
+  position: relative;
+}
+.host-lbl {
+  position: absolute;
+  top: -10px; left: 14px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--t3);
+  background: var(--bg-2);
+  padding: 0 6px;
+}
+.port-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t3);
+  margin-bottom: 12px;
+}
+.port-badge {
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-bd);
+  border-radius: 100px;
+  padding: 2px 8px;
+  color: var(--blue-lt);
+  font-size: 10px;
+}
+.container-wrap {
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-bd);
+  border-radius: var(--r);
+  padding: 16px;
+  position: relative;
+}
+.container-lbl {
+  position: absolute;
+  top: -10px; left: 14px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--blue-lt);
+  background: var(--bg-2);
+  padding: 0 6px;
+}
+.security-wrap {
+  background: var(--teal-bg);
+  border: 1px solid var(--teal-bd);
+  border-radius: var(--rs);
+  padding: 12px;
+  position: relative;
+  margin-bottom: 10px;
+}
+.security-lbl {
+  position: absolute;
+  top: -9px; left: 12px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--teal-lt);
+  background: var(--bg-2);
+  padding: 0 5px;
+}
+.deploy-items-row { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; }
+.di {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 4px 9px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--rs);
+  color: var(--t2);
+}
+.hc-box {
+  background: var(--bg-3);
+  border: 1px dashed var(--border-mid);
+  border-radius: var(--rs);
+  padding: 10px 14px;
+}
+.hc-label { font-family: var(--mono); font-size: 8px; color: var(--t3); margin-bottom: 5px; text-transform: uppercase; }
+.hc-body { font-family: var(--mono); font-size: 9.5px; color: var(--t2); line-height: 1.8; }
+
+/* ── RATIONALE ───────────────────────────── */
+.rationale-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.rat {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 16px;
+}
+.rat-title { font-size: 12px; font-weight: 500; color: var(--t1); margin-bottom: 6px; }
+.rat-body { font-size: 11px; color: var(--t2); line-height: 1.65; }
+
+/* ── FOOTER ──────────────────────────────── */
+.footer {
+  margin-top: 80px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.footer-l, .footer-r {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--t3);
+  line-height: 1.8;
+}
+.footer-r { text-align: right; }
+
+/* responsive */
+@media (max-width: 860px) {
+  .page { padding: 40px 24px; }
+  .sys-flow { grid-template-columns: 1fr; }
+  .flow-arrow { display: none; }
+  .goroutines, .channels, .gw-grid, .rationale-grid { grid-template-columns: 1fr; }
+  .portals { grid-template-columns: 1fr; }
+  .s3-row { flex-direction: column; }
+  .s1-row { flex-direction: column; align-items: stretch; }
+  .outputs { flex-direction: column; }
+}
+
+@media print {
+  body { background: #fff; color: #111; }
+  body::before { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ── HERO ── -->
+<header class="hero">
+  <div class="hero-eyebrow">Project 8 · Academic Assessment System</div>
+  <h1 class="hero-title">Human-AI Co-Learning Agent</h1>
+  <p class="hero-sub">Intelligent automated assessment, dual-role analytics portal, and staged agentic evaluation pipeline — system architecture reference.</p>
+  <div class="badges">
+    <span class="b b-bl">Go 1.22</span>
+    <span class="b b-bl">net/http</span>
+    <span class="b b-bl">HTMX</span>
+    <span class="b b-vi">Agentic Pipeline</span>
+    <span class="b b-vi">Claude / OpenAI LLM</span>
+    <span class="b b-vi">StubAIGateway (tests)</span>
+    <span class="b b-te">Docker</span>
+    <span class="b b-te">non-root container</span>
+    <span class="b b-am">in-memory repos</span>
+    <span class="b b-am">sync.RWMutex</span>
+  </div>
+</header>
+
+
+<!-- 01 SYSTEM OVERVIEW -->
+<section class="section">
+  <div class="s-eye">01</div>
+  <h2 class="s-title">High-level system overview</h2>
+
+  <div class="sys-flow">
+    <div class="fl fl-fe">
+      <div class="fl-num">layer 1</div>
+      <div class="fl-title">Frontend Clients</div>
+      <div class="fl-items">
+        <div class="fi">Student Browser</div>
+        <div class="fi">Faculty Browser</div>
+        <div class="fi" style="color:var(--teal-lt);">HTMX Partial Swaps</div>
+        <div class="fi" style="color:var(--teal-lt);">HTTP GET / POST</div>
+      </div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="fl fl-pr">
+      <div class="fl-num">layer 2</div>
+      <div class="fl-title">HTTP & Presentation</div>
+      <div class="fl-items">
+        <div class="fi">HTTP Mux · routes.Register</div>
+        <div class="fi" style="color:var(--blue-lt);">Auth &amp; Session Middleware</div>
+        <div class="fi" style="color:var(--blue-lt);">Role Gating Middleware</div>
+        <div class="fi">Student / Faculty Controllers</div>
+        <div class="fi">View Renderer (HTML templates)</div>
+      </div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="fl fl-co">
+      <div class="fl-num">layer 3</div>
+      <div class="fl-title">Application & Domain</div>
+      <div class="fl-items">
+        <div class="fi">StudentPortal UseCase</div>
+        <div class="fi">FacultyPortal UseCase</div>
+        <div class="fi" style="color:var(--violet-lt);">StagedEvaluationPipeline</div>
+        <div class="fi" style="color:var(--violet-lt);">DefaultEvaluationEngine</div>
+        <div class="fi">Submission / Evaluation Entity</div>
+      </div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="fl fl-in">
+      <div class="fl-num">layer 4</div>
+      <div class="fl-title">Infrastructure</div>
+      <div class="fl-items">
+        <div class="fi">MemorySubmissionRepository</div>
+        <div class="fi">MemoryEvaluationRepository</div>
+        <div class="fi" style="color:var(--amber-lt);">AI / LLM Gateway Adapter</div>
+        <div class="fi">LocalDiskFileStorage</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">Dependency direction: routes → controller → usecase → repository interfaces → domain. Domain layer is dependency-free from all outer layers.</div>
+</section>
+
+
+<!-- 02 AI PIPELINE -->
+<section class="section">
+  <div class="s-eye">02</div>
+  <h2 class="s-title">Staged AI evaluation pipeline</h2>
+
+  <div class="pipeline">
+
+    <!-- Stage 1 -->
+    <div class="ps ps1">
+      <div class="ps-hd">
+        <div class="ps-n">stage 1</div>
+        <div class="ps-t">Context & Rubric Assembly</div>
+        <span class="b b-bl" style="font-size:9px;">synchronous · no LLM call</span>
+      </div>
+      <div class="ps-bd">
+        <div class="s1-row">
+          <div class="s1-box" style="flex:1;">
+            <div class="s1-box-label">input</div>
+            <div class="s1-box-val">Student Submission<br>Raw Topic Scores</div>
+          </div>
+          <div class="arrow-txt">→</div>
+          <div class="s1-center">
+            <div class="s1-center-label">EvaluationContext Builder</div>
+            <div class="s1-center-body">Constructs typed context carrying the submission, a deterministic <span class="mono-inline">RubricID = RUBRIC-{SubjectID}</span>, and raw topic scores. Free and synchronous — no network call.</div>
+          </div>
+          <div class="arrow-txt">→</div>
+          <div class="s1-box">
+            <div class="s1-box-label">output</div>
+            <div class="s1-box-val">EvaluationContext</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ps-gap"><div class="ps-gap-dot"></div></div>
+
+    <!-- Stage 2 -->
+    <div class="ps ps2">
+      <div class="ps-hd">
+        <div class="ps-n">stage 2</div>
+        <div class="ps-t">Multi-Aspect Evaluation</div>
+        <span class="b b-vi" style="font-size:9px;">3 concurrent goroutines · ctx.Done() select arm</span>
+      </div>
+      <div class="ps-bd">
+        <div class="goroutines">
+          <div class="goroutine">
+            <div class="go-label">goroutine 1</div>
+            <div class="go-name">AILogicEvaluator</div>
+            <div class="go-dim">dimension = logic</div>
+            <div class="go-ch">→ logicCh</div>
+          </div>
+          <div class="goroutine">
+            <div class="go-label">goroutine 2</div>
+            <div class="go-name">AIQualityEvaluator</div>
+            <div class="go-dim">dimension = quality</div>
+            <div class="go-ch">→ qualityCh</div>
+          </div>
+          <div class="goroutine">
+            <div class="go-label">goroutine 3</div>
+            <div class="go-name">AIConceptGapEvaluator</div>
+            <div class="go-dim">dimension = gap</div>
+            <div class="go-ch">→ gapCh</div>
+          </div>
+        </div>
+        <div class="ch-label">↓ buffered channels — deadline-aware</div>
+        <div class="channels">
+          <div class="channel"><div class="ch-ico">chan</div><div class="ch-nm">logicCh</div></div>
+          <div class="channel"><div class="ch-ico">chan</div><div class="ch-nm">qualityCh</div></div>
+          <div class="channel"><div class="ch-ico">chan</div><div class="ch-nm">gapCh</div></div>
+        </div>
+        <div class="note">Each evaluator sends a typed PromptRequest to AIGateway → receives a typed PromptResponse (score, observations, weakTopics). No SDK leaks into the service layer. Upstream deadline propagates cleanly via ctx.Done().</div>
+      </div>
+    </div>
+
+    <div class="ps-gap"><div class="ps-gap-dot"></div></div>
+
+    <!-- Stage 3 -->
+    <div class="ps ps3">
+      <div class="ps-hd">
+        <div class="ps-n">stage 3</div>
+        <div class="ps-t">Weighted Synthesis & Guardrails</div>
+        <span class="b b-te" style="font-size:9px;">configurable via WithWeights functional option</span>
+      </div>
+      <div class="ps-bd">
+        <div class="s3-row">
+          <div style="flex:1;">
+            <div style="font-family:var(--mono);font-size:8px;color:var(--t3);margin-bottom:10px;text-transform:uppercase;">default weights</div>
+            <div class="weights">
+              <div class="w-item">
+                <div class="w-bar-wrap"><div class="w-bar" style="width:50%;background:var(--blue);"></div></div>
+                <span class="w-lbl">Logic</span><span class="w-val">0.5</span>
+              </div>
+              <div class="w-item">
+                <div class="w-bar-wrap"><div class="w-bar" style="width:30%;background:var(--teal);"></div></div>
+                <span class="w-lbl">Quality</span><span class="w-val">0.3</span>
+              </div>
+              <div class="w-item">
+                <div class="w-bar-wrap"><div class="w-bar" style="width:20%;background:var(--violet);"></div></div>
+                <span class="w-lbl">Gap</span><span class="w-val">0.2</span>
+              </div>
+            </div>
+          </div>
+          <div class="guardrail">
+            <div class="guardrail-label">ScoreGuardrail</div>
+            <div class="guardrail-body">
+              Clamps aggregate to <span class="mono-inline">[0, 100]</span><br>
+              Strips prohibited-tone feedback lines<br>
+              Ensures ≥1 feedback sentence present<br>
+              Entity never leaves service in invalid state
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ps-gap"><div class="ps-gap-dot"></div></div>
+
+    <!-- Stage 4 -->
+    <div class="ps ps4">
+      <div class="ps-hd">
+        <div class="ps-n">stage 4</div>
+        <div class="ps-t">Persistence & Feedback Delivery</div>
+        <span class="b b-am" style="font-size:9px;">fully validated · no further transformation</span>
+      </div>
+      <div class="ps-bd">
+        <div class="outputs">
+          <div class="out-card" style="border-color:var(--amber-bd);background:var(--amber-bg);">
+            <div class="out-lbl">domain entity</div>
+            <div class="out-name" style="color:var(--amber-lt);font-family:var(--mono);font-size:12px;">domain.Evaluation</div>
+          </div>
+          <div class="out-card">
+            <div class="out-lbl">persistence</div>
+            <div class="out-name" style="font-size:12px;">EvaluationRepository</div>
+          </div>
+          <div class="out-card">
+            <div class="out-lbl">render</div>
+            <div class="out-name" style="font-size:12px;">HTMX Partial Swap</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- 03 LAYER STACK -->
+<section class="section">
+  <div class="s-eye">03</div>
+  <h2 class="s-title">Layer responsibilities</h2>
+
+  <div class="stack">
+
+    <div class="srow" style="border-left:2px solid var(--teal);">
+      <div class="slc" style="background:var(--teal-bg);">
+        <div class="sl" style="color:var(--teal-lt);">domain</div>
+      </div>
+      <div class="scc">
+        <span class="chip" style="color:var(--teal-lt);border-color:var(--teal-bd);background:var(--teal-bg);">Submission Entity</span>
+        <span class="chip" style="color:var(--teal-lt);border-color:var(--teal-bd);background:var(--teal-bg);">Evaluation Entity</span>
+        <span class="note-inline">Zero external dependencies</span>
+      </div>
+    </div>
+
+    <div class="srow" style="border-left:2px solid var(--violet);">
+      <div class="slc" style="background:var(--violet-bg);">
+        <div class="sl" style="color:var(--violet-lt);">service</div>
+      </div>
+      <div class="scc">
+        <span class="chip" style="color:var(--violet-lt);border-color:var(--violet-bd);background:var(--violet-bg);">DefaultEvaluationEngine</span>
+        <span class="chip" style="color:var(--violet-lt);border-color:var(--violet-bd);background:var(--violet-bg);">StagedEvaluationPipeline</span>
+        <span class="chip" style="color:var(--violet-lt);border-color:var(--violet-bd);background:var(--violet-bg);">AILogicEvaluator</span>
+        <span class="chip" style="color:var(--violet-lt);border-color:var(--violet-bd);background:var(--violet-bg);">AIQualityEvaluator</span>
+        <span class="chip" style="color:var(--violet-lt);border-color:var(--violet-bd);background:var(--violet-bg);">AIConceptGapEvaluator</span>
+        <span class="chip" style="color:var(--violet-lt);border-color:var(--violet-bd);background:var(--violet-bg);">ScoreGuardrail</span>
+      </div>
+    </div>
+
+    <div class="srow" style="border-left:2px solid var(--border-hi);">
+      <div class="slc" style="background:var(--bg-2);">
+        <div class="sl" style="color:var(--t2);">usecase</div>
+      </div>
+      <div class="scc">
+        <span class="chip chip-gr">StudentPortal UseCase</span>
+        <span class="chip chip-gr">FacultyPortal UseCase</span>
+        <span class="chip chip-gr">FacultyDashboard DTO</span>
+        <span class="chip chip-gr">StudentDashboard DTO</span>
+        <span class="chip chip-gr">SubjectSummary DTO</span>
+      </div>
+    </div>
+
+    <div class="srow" style="border-left:2px solid var(--blue);">
+      <div class="slc" style="background:var(--blue-bg);">
+        <div class="sl" style="color:var(--blue-lt);">repository</div>
+      </div>
+      <div class="scc">
+        <span class="chip" style="color:var(--blue-lt);border-color:var(--blue-bd);background:var(--blue-bg);">SubmissionRepository intf</span>
+        <span class="chip" style="color:var(--blue-lt);border-color:var(--blue-bd);background:var(--blue-bg);">EvaluationRepository intf</span>
+        <span class="chip" style="color:var(--blue-lt);border-color:var(--blue-bd);background:var(--blue-bg);">FileStorage intf</span>
+        <span class="chip" style="color:var(--blue-lt);border-color:var(--blue-bd);background:var(--blue-bg);">AIGateway intf</span>
+      </div>
+    </div>
+
+    <div class="srow" style="border-left:2px solid var(--amber);">
+      <div class="slc" style="background:var(--amber-bg);">
+        <div class="sl" style="color:var(--amber-lt);">adapter</div>
+      </div>
+      <div class="scc">
+        <span class="chip" style="color:var(--amber-lt);border-color:var(--amber-bd);background:var(--amber-bg);">MemorySubmissionRepo</span>
+        <span class="chip" style="color:var(--amber-lt);border-color:var(--amber-bd);background:var(--amber-bg);">MemoryEvaluationRepo</span>
+        <span class="chip" style="color:var(--amber-lt);border-color:var(--amber-bd);background:var(--amber-bg);">StubAIGateway</span>
+        <span class="chip" style="color:var(--amber-lt);border-color:var(--amber-bd);background:var(--amber-bg);">OpenAI / Anthropic Adapter</span>
+        <span class="chip" style="color:var(--amber-lt);border-color:var(--amber-bd);background:var(--amber-bg);">LocalDiskFileStorage</span>
+        <span class="note-inline">sync.RWMutex on all repos</span>
+      </div>
+    </div>
+
+    <div class="srow" style="border-left:2px solid var(--border-hi);">
+      <div class="slc" style="background:var(--bg-2);">
+        <div class="sl" style="color:var(--t2);">controller</div>
+      </div>
+      <div class="scc">
+        <span class="chip chip-gr">HealthController</span>
+        <span class="chip chip-gr">StudentController</span>
+        <span class="chip chip-gr">FacultyController</span>
+      </div>
+    </div>
+
+    <div class="srow" style="border-left:2px solid var(--border-hi);">
+      <div class="slc" style="background:var(--bg-2);">
+        <div class="sl" style="color:var(--t2);">routes</div>
+      </div>
+      <div class="scc">
+        <span class="chip chip-gr">HTTP Mux</span>
+        <span class="chip chip-gr">Auth &amp; Session Middleware</span>
+        <span class="chip chip-gr">roleRequired Middleware</span>
+      </div>
+    </div>
+
+    <div class="srow" style="border-left:2px solid var(--border-hi);">
+      <div class="slc" style="background:var(--bg-2);">
+        <div class="sl" style="color:var(--t2);">bootstrap</div>
+      </div>
+      <div class="scc">
+        <span class="chip chip-gr">Config loading</span>
+        <span class="chip chip-gr">Dependency wiring</span>
+        <span class="chip chip-gr">Application composition</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- 04 DUAL PORTALS -->
+<section class="section">
+  <div class="s-eye">04</div>
+  <h2 class="s-title">Role-specific interfaces</h2>
+
+  <div class="portals">
+    <div class="portal" style="border-top:2px solid var(--blue);">
+      <div class="portal-role"><div class="rdot" style="background:var(--blue);"></div>Student Portal</div>
+      <div class="feats">
+        <div class="feat"><div class="feat-ico" style="color:var(--blue-lt);">↑</div><div>Submission upload with disk file storage</div></div>
+        <div class="feat"><div class="feat-ico" style="color:var(--blue-lt);">◉</div><div>Real-time submission status tracking</div></div>
+        <div class="feat"><div class="feat-ico" style="color:var(--blue-lt);">★</div><div>Grade and marks visibility</div></div>
+        <div class="feat"><div class="feat-ico" style="color:var(--blue-lt);">≡</div><div>Personalized AI feedback timeline</div></div>
+        <div class="feat"><div class="feat-ico" style="color:var(--blue-lt);">▦</div><div>HTMX partial refresh — no page reload</div></div>
+      </div>
+    </div>
+
+    <div class="portal" style="border-top:2px solid var(--violet);">
+      <div class="portal-role"><div class="rdot" style="background:var(--violet);"></div>Faculty Portal</div>
+      <div class="feats">
+        <div class="feat"><div class="feat-ico" style="color:var(--violet-lt);">⊡</div><div>Submission completion monitoring dashboard</div></div>
+        <div class="feat"><div class="feat-ico" style="color:var(--violet-lt);">⚠</div><div>Missing / overdue assessment alerts via HTMX polling</div></div>
+        <div class="feat"><div class="feat-ico" style="color:var(--violet-lt);">≈</div><div>Subject and topic mastery summaries</div></div>
+        <div class="feat"><div class="feat-ico" style="color:var(--violet-lt);">⊕</div><div>Trigger evaluation pipeline per submission</div></div>
+        <div class="feat"><div class="feat-ico" style="color:var(--violet-lt);">▥</div><div>AI reasoning trace per evaluation (explainability)</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- 05 AIGATEWAY -->
+<section class="section">
+  <div class="s-eye">05</div>
+  <h2 class="s-title">AIGateway port & adapter strategy</h2>
+
+  <div class="gw-grid">
+    <div class="gw-card">
+      <div class="gw-label">Port (interface)</div>
+      <div class="gw-name" style="color:var(--blue-lt);">repository.AIGateway</div>
+      <div class="code-block">PromptRequest {<br>&nbsp;&nbsp;dimension<br>&nbsp;&nbsp;rubricID<br>&nbsp;&nbsp;content<br>&nbsp;&nbsp;topicHints<br>&nbsp;&nbsp;maxScore<br>}</div>
+    </div>
+
+    <div class="gw-card">
+      <div class="gw-label">Typed response</div>
+      <div class="gw-name" style="color:var(--teal-lt);">PromptResponse</div>
+      <div class="code-block">PromptResponse {<br>&nbsp;&nbsp;score<br>&nbsp;&nbsp;observations<br>&nbsp;&nbsp;weakTopics<br>}</div>
+      <div style="margin-top:10px;font-size:10px;color:var(--t3);line-height:1.6;">Explicit contract — no LLM SDK leaks into service layer. One typed call, one typed result.</div>
+    </div>
+
+    <div class="gw-card">
+      <div class="gw-label">Concrete adapters</div>
+      <div class="gw-name" style="color:var(--t2);">Injected at bootstrap</div>
+      <div class="adapters">
+        <div class="adp" style="color:var(--amber-lt);border-color:var(--amber-bd);background:var(--amber-bg);">StubAIGateway — tests &amp; CI</div>
+        <div class="adp" style="color:var(--blue-lt);border-color:var(--blue-bd);background:var(--blue-bg);">openai.NewAdapter(cfg)</div>
+        <div class="adp" style="color:var(--violet-lt);border-color:var(--violet-bd);background:var(--violet-bg);">anthropic.NewAdapter(cfg)</div>
+      </div>
+      <div style="margin-top:8px;font-size:10px;color:var(--t3);">Single-line swap at bootstrap. Zero service-layer changes.</div>
+    </div>
+  </div>
+</section>
+
+
+<!-- 06 DEPLOYMENT -->
+<section class="section">
+  <div class="s-eye">06</div>
+  <h2 class="s-title">Container architecture & deployment</h2>
+
+  <div class="deploy-outer">
+    <div class="host-wrap">
+      <div class="host-lbl">Host Machine / Deployment Host</div>
+
+      <div class="port-row">Port mapping: <span class="port-badge">8080 : 8080</span></div>
+
+      <div class="container-wrap">
+        <div class="container-lbl">Docker Container (colearning-agent)</div>
+
+        <div style="display:flex;gap:12px;align-items:flex-start;margin-top:8px;">
+          <div style="flex:1;">
+            <div class="security-wrap">
+              <div class="security-lbl">Non-root security context (appuser:10001)</div>
+              <div class="deploy-items-row">
+                <span class="di">/app/colearning-agent</span>
+                <span class="di">/app/src/templates/**/*.html</span>
+                <span class="di">PORT=8080</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hc-box" style="min-width:210px;">
+            <div class="hc-label">Health check</div>
+            <div class="hc-body">wget http://localhost<br>:8080/healthz<br>Periodically polls binary</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- 07 RATIONALE -->
+<section class="section">
+  <div class="s-eye">07</div>
+  <h2 class="s-title">Architectural rationale</h2>
+
+  <div class="rationale-grid">
+    <div class="rat">
+      <div class="rat-title">Dependency inversion</div>
+      <div class="rat-body">Use cases depend on repository <em>interfaces</em>, never concrete adapters. Swapping in-memory repos for Postgres requires zero changes to business logic.</div>
+    </div>
+    <div class="rat">
+      <div class="rat-title">No SDK leaks</div>
+      <div class="rat-body">The evaluation pipeline imports only <span class="mono-inline">repository.AIGateway</span>, never any provider SDK. Provider identity is a single bootstrap-time decision.</div>
+    </div>
+    <div class="rat">
+      <div class="rat-title">Concurrency safety</div>
+      <div class="rat-body">All in-memory repositories hold a <span class="mono-inline">sync.RWMutex</span>. Stage 2 goroutines are deadline-aware: any upstream context cancellation propagates via <span class="mono-inline">ctx.Done()</span>.</div>
+    </div>
+    <div class="rat">
+      <div class="rat-title">HTMX over SPA</div>
+      <div class="rat-body">Faculty missing-work alerts use <span class="mono-inline">hx-trigger="every 30s"</span>. Server stays the single source of truth — no JS build pipeline or hydration complexity.</div>
+    </div>
+    <div class="rat">
+      <div class="rat-title">Testability</div>
+      <div class="rat-body"><span class="mono-inline">StubAIGateway</span> is deterministic and rule-based. The full 4-stage pipeline — concurrency, guardrails, weighted aggregation — runs in tests with zero network I/O.</div>
+    </div>
+    <div class="rat">
+      <div class="rat-title">Security posture</div>
+      <div class="rat-body">Non-root container user <span class="mono-inline">appuser:10001</span>. Role gating sits before all controllers. Session extraction is a distinct middleware concern, not controller logic.</div>
+    </div>
+  </div>
+</section>
+
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-l">
+    human-ai co-learning agent · project 8<br>
+    Go · HTMX · Docker · Claude / OpenAI
+  </div>
+  <div class="footer-r">
+    n-layered architecture · SOLID boundaries<br>
+    staged agentic evaluation pipeline
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

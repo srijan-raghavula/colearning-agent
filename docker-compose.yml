@@ -1,0 +1,19 @@
+name: colearning-agent
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: colearning-agent
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

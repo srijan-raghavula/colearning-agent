@@ -5,7 +5,7 @@ Go scaffolding for a human-AI co-learning agent with an n-layered architecture a
 ## Project documentation
 
 - Problem statement: `/docs/project-problem-statement.md`
-- Architecture: `/docs/project-architecture.md`
+- Architecture & Mermaid Diagrams: `/docs/project-architecture.md`
 
 ## Project structure
 
@@ -29,9 +29,39 @@ docs/                          # project-level architecture and problem statemen
 
 ## Quickstart
 
+### Local Development
+
 ```bash
 go test ./...
 go run ./src/cmd/api
+```
+
+### Docker & Containerization
+
+Build and run using Docker:
+
+```bash
+# Build Docker image
+docker build -t colearning-agent:latest .
+
+# Run Docker container
+docker run -p 8080:8080 --name colearning-agent colearning-agent:latest
+```
+
+Or run using Docker Compose:
+
+```bash
+# Start containerized application
+docker compose up -d
+
+# Check service status and health
+docker compose ps
+
+# View logs
+docker compose logs -f
+
+# Stop service
+docker compose down
 ```
 
 ## Portal routes
@@ -48,3 +78,4 @@ go run ./src/cmd/api
 
 Use `/planning` for compact product context (user stories + feature plans) that can
 be consumed by humans and AI agents without introducing heavy process overhead.
+
