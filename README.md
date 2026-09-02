@@ -2,31 +2,36 @@
 
 Go scaffolding for a human-AI co-learning agent with an n-layered architecture and HTMX-enabled dual-role portal.
 
+## Project documentation
+
+- Problem statement: `/docs/project-problem-statement.md`
+- Architecture: `/docs/project-architecture.md`
+
 ## Project structure
 
 ```text
-cmd/
-  api/                        # entrypoint only
 src/
-  adapter/                    # concrete integrations (memory/db/ai/etc.)
-  bootstrap/                  # dependency wiring and startup composition
-  config/                     # runtime configuration
-  controller/                 # HTTP request orchestration
-  domain/                     # core entities and business rules
-  repository/                 # abstraction interfaces for persistence reads/writes
-  routes/                     # route registration + middleware
-  service/                    # evaluation and feedback services
-  templates/                  # server-rendered HTML templates and HTMX partials
-  usecase/                    # application workflows
-  view/                       # template rendering helpers
-planning/                     # lightweight non-code context for agentic workflows
+  cmd/api/                     # entrypoint only
+  adapter/                     # concrete integrations (memory/db/ai/etc.)
+  bootstrap/                   # dependency wiring and startup composition
+  config/                      # runtime configuration
+  controller/                  # HTTP request orchestration
+  domain/                      # core entities and business rules
+  repository/                  # abstraction interfaces for persistence reads/writes
+  routes/                      # route registration + middleware
+  service/                     # evaluation and feedback services
+  templates/                   # server-rendered HTML templates and HTMX partials
+  usecase/                     # application workflows
+  view/                        # template rendering helpers
+planning/                      # lightweight non-code context for agentic workflows
+docs/                          # project-level architecture and problem statement
 ```
 
 ## Quickstart
 
 ```bash
 go test ./...
-go run ./cmd/api
+go run ./src/cmd/api
 ```
 
 ## Portal routes
