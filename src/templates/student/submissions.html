@@ -1,0 +1,39 @@
+{{define "student/submissions.html"}}
+<section id="submissions">
+  <h2>Submission Status, Marks, and Feedback</h2>
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Subject</th>
+        <th>Topic</th>
+        <th>Status</th>
+        <th>Mastery</th>
+        <th>Feedback</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Dashboard.Records}}
+      <tr>
+        <td>{{.Submission.ID}}</td>
+        <td>{{.Submission.SubjectID}}</td>
+        <td>{{.Submission.TopicID}}</td>
+        <td>{{.Submission.Status}}</td>
+        <td>{{if .Evaluation}}{{printf "%.1f%%" .Evaluation.MasteryPercentage}}{{else}}Pending{{end}}</td>
+        <td>
+          {{if .Evaluation}}
+            <ul>
+            {{range .Evaluation.Feedback}}<li>{{.}}</li>{{end}}
+            </ul>
+          {{else}}
+            Awaiting evaluation.
+          {{end}}
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="6">No submissions yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}

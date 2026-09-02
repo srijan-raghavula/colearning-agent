@@ -1,0 +1,12 @@
+{{define "faculty/missing.html"}}
+<section id="missing">
+  <h2>Missing / Overdue Alerts</h2>
+  <ul>
+    {{range .Dashboard.MissingSubmissions}}
+      <li>{{.StudentID}} is missing {{.Title}} ({{.SubjectID}} / {{.TopicID}})</li>
+    {{else}}
+      <li>No missing submissions.</li>
+    {{end}}
+  </ul>
+</section>
+{{end}}

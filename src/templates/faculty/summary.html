@@ -1,0 +1,33 @@
+{{define "faculty/summary.html"}}
+<section id="summary">
+  <h2>Subject Mastery and Completion</h2>
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr>
+        <th>Subject</th>
+        <th>Total</th>
+        <th>Submitted</th>
+        <th>Late</th>
+        <th>Missing</th>
+        <th>Average Mastery</th>
+        <th>Low Mastery Topics</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Dashboard.Summaries}}
+      <tr>
+        <td>{{.SubjectID}}</td>
+        <td>{{.TotalSubmissions}}</td>
+        <td>{{.SubmittedCount}}</td>
+        <td>{{.LateCount}}</td>
+        <td>{{.MissingCount}}</td>
+        <td>{{printf "%.1f%%" .AverageMastery}}</td>
+        <td>{{if .LowMasteryTopics}}{{range $i, $topic := .LowMasteryTopics}}{{if $i}}, {{end}}{{$topic}}{{end}}{{else}}-{{end}}</td>
+      </tr>
+      {{else}}
+      <tr><td colspan="7">No data available.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
