@@ -1,5 +1,7 @@
 # Feature Plan: P8-001 Automated Evaluation Engine
 
+> **Status:** legacy/supporting capability. The primary student path is now the co-learning agent defined in `P8-002-learning-agent-foundation.md`. Keep the evaluation domain separate from learning sessions until an explicit formative-check contract is approved.
+
 ## Objective
 Build a service that evaluates student submissions and computes topic/subject mastery percentages.
 

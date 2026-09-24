@@ -11,5 +11,5 @@ Lightweight non-code context for product direction and execution.
 ## Structure
 
 - `user-stories.md` → prioritized stories with acceptance criteria.
-- `features/` → one file per feature plan.
+- `features/` → one file per feature plan, including the co-learning vertical slice and the legacy evaluator slice.
 - `templates/feature-plan.md` → plan template for consistency.

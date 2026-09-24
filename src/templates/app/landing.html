@@ -1,0 +1,79 @@
+{{define "app/landing.html"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CoLearn · Learn with a teacher-led tutor</title>
+  <link rel="stylesheet" href="/static/assets/app.css">
+</head>
+<body class="landing">
+  <div class="shell">
+    <nav class="landing-nav">
+      <a class="landing-brand" href="/">
+        <span class="brand-mark">C</span>
+        <span class="brand-copy">
+          <span class="brand-name">CoLearn</span>
+          <span class="brand-sub">Human + AI learning</span>
+        </span>
+      </a>
+      <div class="landing-nav-meta">A calmer way to keep learning</div>
+    </nav>
+
+    <main class="landing-main">
+      <section class="landing-grid">
+        <div>
+          <div class="eyebrow">Learning that keeps going</div>
+          <h1 class="landing-title">Understand more.<br><em>Keep moving.</em></h1>
+          <p class="landing-copy">CoLearn pairs a teacher’s curriculum with a configurable AI tutor. Ask questions, practice at your own pace, and see your understanding grow over time—not through a pile of submissions.</p>
+          <div class="landing-actions">
+            <a class="btn btn-primary" href="/student?role=student&amp;student_id=S-001">Open student workspace <span>→</span></a>
+            <a class="btn btn-secondary" href="/teacher?role=teacher">View teacher dashboard</a>
+          </div>
+          <div class="landing-note"><span class="check">✓</span> Teacher-approved context · adaptive tutor modes · formative checks when useful</div>
+        </div>
+
+        <div class="landing-preview" aria-label="CoLearn dashboard preview">
+          <div class="preview-window">
+            <div class="preview-top">
+              <div class="preview-dots"><i></i><i></i><i></i></div>
+              <span>CoLearn / student workspace</span>
+            </div>
+            <div class="preview-body">
+              <div class="preview-main">
+                <div class="preview-label">Your learning path</div>
+                <div class="preview-title">Good morning, Alex</div>
+                <div class="preview-card">
+                  <div class="preview-label">Continue learning</div>
+                  <div class="preview-title" style="font-size:15px;margin:5px 0 10px">Linear equations</div>
+                  <div class="preview-line teal"></div>
+                  <div class="preview-line short"></div>
+                </div>
+                <div class="preview-card">
+                  <div class="preview-label">Next up</div>
+                  <div class="preview-line" style="width:80%"></div>
+                  <div class="preview-line short"></div>
+                </div>
+              </div>
+              <div class="preview-side">
+                <div class="preview-side-title">Concept confidence</div>
+                <div class="preview-ring"><strong>68%</strong></div>
+                <p>Your understanding is building. One more check will make it stick.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-strip">
+        <div class="feature-item"><strong>01 · Teacher-led</strong><span>Concepts, objectives, and source material stay grounded in what your teacher provides.</span></div>
+        <div class="feature-item"><strong>02 · Adaptive</strong><span>Choose a tutor mode that matches how you want to learn: guided, Socratic, direct, or practice.</span></div>
+        <div class="feature-item"><strong>03 · Continuous</strong><span>Your sessions and evidence stay connected, so the next step starts where you left off.</span></div>
+      </section>
+
+      <div class="footer">This is the first vertical slice of a teacher-grounded co-learning system. <a href="/healthz">System health</a></div>
+    </main>
+  </div>
+</body>
+</html>
+{{end}}

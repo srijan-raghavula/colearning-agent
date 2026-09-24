@@ -31,7 +31,7 @@ WORKDIR /app
 # Copy compiled executable from builder stage
 COPY --from=builder /app/colearning-agent /app/colearning-agent
 
-# Copy HTML & HTMX template files required by view.NewRenderer
+# Copy HTML, HTMX, and shared CSS assets required by view.NewRenderer
 COPY --from=builder /app/src/templates /app/src/templates
 
 # Assign permissions

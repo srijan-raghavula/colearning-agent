@@ -1,81 +1,116 @@
 # colearning-agent
 
-Go scaffolding for a human-AI co-learning agent with an n-layered architecture and HTMX-enabled dual-role portal.
+CoLearn is a teacher-grounded human–AI co-learning application. The primary student experience is a configurable tutor conversation grounded in teacher-provided concepts and labeled source material. Automated evaluation remains an optional formative capability and the original assignment routes are retained for compatibility.
 
-## Project documentation
+## Product documentation
 
-- Problem statement: `/docs/project-problem-statement.md`
-- Architecture & Mermaid Diagrams: `/docs/project-architecture.md`
+- Original copied requirement: [`docs/project-problem-statement.md`](docs/project-problem-statement.md) — intentionally preserved verbatim
+- Target architecture and Mermaid diagrams: [`docs/project-architecture.md`](docs/project-architecture.md)
+- Versioned JSON API: [`docs/api.md`](docs/api.md)
+- UI architecture: [`docs/ui-architecture.md`](docs/ui-architecture.md)
+- User flow: [`planning/userflow-mermaid.md`](planning/userflow-mermaid.md)
+- User stories: [`planning/user-stories.md`](planning/user-stories.md)
+- Feature plans: [`planning/features/`](planning/features/)
+
+## Current vertical slice
+
+The first slice is intentionally thin but demonstrable:
+
+- one seeded teacher-owned course
+- four ordered concepts with objectives and provenance-aware materials
+- resumable student learning sessions and tutor turns
+- guided, Socratic, direct, practice, hint, and diagnostic modes
+- deterministic provider-neutral tutor gateway
+- concept progress and next-action read models
+- polished student dashboard and learning space
+- teacher class dashboard and content studio
+- HTML/HTMX and versioned JSON API surfaces
+
+The application currently uses thread-safe in-memory repositories and a demo role/student identity. These are visible seams for replacement, not production security mechanisms.
 
 ## Project structure
 
 ```text
 src/
   cmd/api/                     # entrypoint only
-  adapter/                     # concrete integrations (memory/db/ai/etc.)
-  bootstrap/                   # dependency wiring and startup composition
+  adapter/memory/              # in-memory repositories and deterministic gateways
+  bootstrap/                   # dependency wiring and demo seed data
   config/                      # runtime configuration
-  controller/                  # HTTP request orchestration
-  domain/                      # core entities and business rules
-  repository/                  # abstraction interfaces for persistence reads/writes
-  routes/                      # route registration + middleware
-  service/                     # evaluation and feedback services
-  templates/                   # server-rendered HTML templates and HTMX partials
-  usecase/                     # application workflows
-  view/                        # template rendering helpers
-planning/                      # lightweight non-code context for agentic workflows
-docs/                          # project-level architecture and problem statement
+  controller/                  # HTML and JSON request orchestration
+  domain/                      # learning and legacy assessment entities
+  repository/                  # persistence and provider ports
+  routes/                      # route registration and demo role middleware
+  service/                     # tutor response policy and legacy evaluator
+  templates/                   # server-rendered HTML and shared CSS
+  usecase/                     # student/teacher learning workflows
+  view/                        # buffered template rendering
+planning/                      # product flow, stories, and feature plans
+docs/                          # architecture, API, and original requirement
 ```
 
 ## Quickstart
 
-### Local Development
+### Local development
 
 ```bash
 go test ./...
+go vet ./...
 go run ./src/cmd/api
 ```
 
-### Docker & Containerization
+Open:
 
-Build and run using Docker:
+- `http://localhost:8080/` — product landing page
+- `http://localhost:8080/student?role=student&student_id=S-001` — student dashboard
+- `http://localhost:8080/student/workspace?role=student&student_id=S-001` — learning space
+- `http://localhost:8080/teacher?role=teacher` — teacher dashboard
+- `http://localhost:8080/teacher/content?role=teacher` — content studio
+
+The demo accepts `role=teacher` or `role=faculty` for teacher routes while the codebase transitions from the legacy faculty vocabulary.
+
+### Docker and containerization
 
 ```bash
-# Build Docker image
 docker build -t colearning-agent:latest .
-
-# Run Docker container
 docker run -p 8080:8080 --name colearning-agent colearning-agent:latest
 ```
 
-Or run using Docker Compose:
+Or:
 
 ```bash
-# Start containerized application
 docker compose up -d
-
-# Check service status and health
 docker compose ps
-
-# View logs
 docker compose logs -f
-
-# Stop service
 docker compose down
 ```
 
-## Portal routes
+## API surface
 
-- `GET /healthz`
-- `GET /student?role=student&student_id=S-001`
-- `GET /student/submissions?role=student&student_id=S-001` (HTMX partial)
-- `POST /student/submit?role=student`
-- `GET /faculty?role=faculty`
-- `GET /faculty/summary?role=faculty` (HTMX partial)
-- `GET /faculty/missing?role=faculty` (HTMX partial)
+The stable versioned contract is documented in [`docs/api.md`](docs/api.md).
 
-## Planning context folder
+```text
+GET  /healthz
+GET  /api/v1/student/dashboard
+POST /api/v1/student/sessions
+GET  /api/v1/student/sessions/{session_id}
+POST /api/v1/student/sessions/{session_id}/turns
+POST /api/v1/student/sessions/{session_id}/understanding-checks
+GET  /api/v1/teacher/dashboard
+POST /api/v1/teacher/materials
+PUT  /api/v1/teacher/courses/{course_id}/tutor-policy
+```
 
-Use `/planning` for compact product context (user stories + feature plans) that can
-be consumed by humans and AI agents without introducing heavy process overhead.
+HTML compatibility routes remain available:
 
+```text
+GET  /student/submissions
+POST /student/submit
+GET  /faculty/summary
+GET  /faculty/missing
+```
+
+They are not linked from the co-learning product UI.
+
+## Production follow-up
+
+Before deployment, replace the demo identity and in-memory adapters, add authenticated actor ownership checks, add a bounded source-ingestion adapter, connect a real model provider behind `LearningAgentGateway`, and expand the optional understanding checker with production rubric/provider versioning. The original requirement document should remain unchanged as the source requirement record.

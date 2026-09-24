@@ -1,283 +1,310 @@
-# Project Architecture
+# Co-Learning Architecture
 
-## Architectural Style
+> **Architecture status:** the first vertical slice is implemented. The copied requirement in `docs/project-problem-statement.md` is intentionally preserved as-is; this document describes the product direction and implementation boundary we are building toward.
 
-The application follows an n-layered architecture with all Go packages under `/src`, preserving clear dependency direction and SOLID boundaries.
+## Product thesis
 
-Dependency direction:
+CoLearn is a teacher-grounded learning application. The student does not need to submit work to unlock the next interaction. The student asks, practices, reflects, and resumes a learning thread while the tutor agent uses teacher-provided context and approved external sources to choose a useful next turn.
 
-`routes -> controller -> usecase -> repository interfaces`
+The existing automated evaluation pipeline remains a **formative-check sidecar**. It is not the center of the student experience and is not required for a normal learning turn.
 
-`usecase -> service`
+## Architectural style
 
-`adapter -> repository interfaces`
+The Go application keeps the existing n-layered dependency direction:
 
-`domain` remains dependency-free from outer layers.
-
-## High-Level System Architecture
-
-```mermaid
-graph LR
-    subgraph Clients ["1. Frontend Clients"]
-        direction TB
-        Student["Student Portal<br/>(HTMX / HTML)"]
-        Faculty["Faculty Portal<br/>(HTMX / HTML)"]
-    end
-
-    subgraph Presentation ["2. HTTP & Presentation"]
-        direction TB
-        Router["HTTP Router & Middleware"]
-        Controllers["Controllers & Template Renderer"]
-    end
-
-    subgraph CoreLogic ["3. Application & Domain"]
-        direction TB
-        UseCases["Student & Faculty Use Cases"]
-        EvalEngine["Evaluation Engine"]
-    end
-
-    subgraph Infrastructure ["4. Data & Infrastructure"]
-        direction TB
-        MemoryRepos["In-Memory Repositories<br/>(Thread-Safe)"]
-        AIGateway["AI / LLM Gateway"]
-    end
-
-    Clients -->|HTTP GET/POST & HTMX Swaps| Presentation
-    Presentation --> CoreLogic
-    CoreLogic --> MemoryRepos
-    CoreLogic --> AIGateway
+```text
+routes -> controllers -> usecases -> domain
+                              |  -> repository ports
+                              |  -> service ports
+                              v
+                         adapters implement ports
 ```
 
-## Staged AI Evaluation Pipeline Architecture
+The new learning path is parallel to the legacy assessment path. It does not overload `Submission` or `Evaluation`, because those entities are keyed to assignments and would corrupt conversational history.
 
-Instead of relying on a monolithic prompt call, the evaluation engine employs a **staged, multi-aspect processing pipeline**. This design ensures deterministic scoring, structured topic mapping, and verifiable safety guardrails.
-
-```mermaid
-graph TD
-    subgraph Stage1 ["Stage 1: Context & Rubric Assembly"]
-        Sub[Student Submission] --> CtxBuilder["EvaluationContext Builder<br/>(RubricID = RUBRIC-{SubjectID})"]
-        Rubric[Raw Topic Scores] --> CtxBuilder
-    end
-
-    subgraph Stage2 ["Stage 2: Multi-Aspect Evaluation — Concurrent Goroutines"]
-        CtxBuilder --> LogicEval["AILogicEvaluator<br/>(AIGateway dimension=logic)"]
-        CtxBuilder --> QualityEval["AIQualityEvaluator<br/>(AIGateway dimension=quality)"]
-        CtxBuilder --> GapEval["AIConceptGapEvaluator<br/>(AIGateway dimension=gap)"]
-        LogicEval --> LogicCh[(logicCh channel)]
-        QualityEval --> QualityCh[(qualityCh channel)]
-        GapEval --> GapCh[(gapCh channel)]
-    end
-
-    subgraph Stage3 ["Stage 3: Weighted Synthesis & Guardrails"]
-        LogicCh --> Synth["Weighted Aggregation<br/>(default: L=0.5, Q=0.3, G=0.2)"]
-        QualityCh --> Synth
-        GapCh --> Synth
-        Synth --> Guardrail["ScoreGuardrail<br/>(Clamp [0,100], Tone Sanitisation, Minimum Feedback)"]
-    end
-
-    subgraph Stage4 ["Stage 4: Persistence & Feedback Delivery"]
-        Guardrail --> EvalResult[domain.Evaluation Entity]
-        EvalResult --> Repo[EvaluationRepository]
-        EvalResult --> UI[HTMX UI Dynamic Render]
-    end
-```
-
-### Pipeline Stage Rationale
-
-1. **Stage 1 (Context Assembly)**: Constructs a typed `EvaluationContext` carrying the submission, a deterministic `RubricID` (`RUBRIC-{SubjectID}`), and raw topic scores. No LLM call here — this stage is free and synchronous.
-2. **Stage 2 (Concurrent Multi-Aspect Evaluation)**: Three sub-evaluators (`AILogicEvaluator`, `AIQualityEvaluator`, `AIConceptGapEvaluator`) each send a typed `PromptRequest` to the injected `AIGateway` and receive a typed `PromptResponse`. They run in three goroutines; results are collected over buffered channels with a `ctx.Done()` select arm, so any upstream deadline propagates cleanly.
-3. **Stage 3 (Synthesis & Guardrails)**: Each sub-score is normalised to a percentage, then combined with configurable weights via the `WithWeights` functional option. `ScoreGuardrail` then clamps the aggregate to `[0, 100]`, strips prohibited-tone feedback lines, and ensures at least one feedback sentence always exists before the entity leaves the service layer.
-4. **Stage 4 (Persistence & Feedback)**: Returns a fully validated `domain.Evaluation` ready for persistence and HTMX rendering without further transformation.
-
-### AIGateway Port & Adapter Strategy
-
-The `repository.AIGateway` interface accepts a typed `PromptRequest` (dimension, rubric ID, content, topic hints, max score) and returns a typed `PromptResponse` (score, observations, weak topics). This explicit contract means:
-- **No LLM SDK leaks** into the service layer — the pipeline imports only `repository`, not any provider SDK.
-- **Swapping providers is a single-line bootstrap change**: `memory.NewStubAIGateway()` → `openai.NewAdapter(cfg)` or `anthropic.NewAdapter(cfg)`.
-- **Tests use `StubAIGateway`** (deterministic, rule-based) so the full four-stage pipeline including concurrency, guardrails, and weighted aggregation is exercised without network I/O.
-
-## Detailed Layered Component Architecture
+## System context
 
 ```mermaid
-graph TD
-    subgraph Clients["Clients / Browser Layer"]
-        StudentBrowser["Student Browser (HTMX / HTML)"]
-        FacultyBrowser["Faculty Browser (HTMX / HTML)"]
-    end
-
-    subgraph Presentation["Presentation & Routing Layer"]
-        Router["HTTP Mux (routes.Register)"]
-        AuthMW["Auth & Session Middleware"]
-        RoleMW["Role Gating Middleware"]
-        HealthCtrl["HealthController"]
-        StudentCtrl["StudentController"]
-        FacultyCtrl["FacultyController"]
-        ViewRenderer["View Renderer (HTML Templates)"]
-    end
-
-    subgraph Application["Application / Use Case Layer"]
-        StudentUC["StudentPortal UseCase"]
-        FacultyUC["FacultyPortal UseCase"]
-        SummariesDTO["Derived Read Models (Faculty/Student Summaries)"]
-    end
-
-    subgraph ServiceLayer["Domain Service Layer"]
-        EvalEngine["DefaultEvaluationEngine (pure-math fallback)"]
-        StagedPipeline["StagedEvaluationPipeline"]
-        LogicEval2["AILogicEvaluator"]
-        QualityEval2["AIQualityEvaluator"]
-        GapEval2["AIConceptGapEvaluator"]
-        Guardrail2["ScoreGuardrail"]
-    end
-
-    subgraph Abstractions["Repository & Gateway Abstractions"]
-        SubRepoIntf["SubmissionRepository (Interface)"]
-        EvalRepoIntf["EvaluationRepository (Interface)"]
-        AIGatewayIntf["AIGateway / LLMProvider (Interface)"]
-        FileStorageIntf["FileStorage (Interface)"]
-    end
-
-    subgraph Adapters["Infrastructure & Concrete Adapters"]
-        MemSubRepo["MemorySubmissionRepository (sync.RWMutex)"]
-        MemEvalRepo["MemoryEvaluationRepository (sync.RWMutex)"]
-        LLMAdapter["OpenAI / Anthropic LLM Adapter"]
-        DiskFileStorage["LocalDiskFileStorage"]
-    end
-
-    subgraph DomainLayer["Core Domain Models"]
-        SubDomain["Submission Entity"]
-        EvalDomain["Evaluation Entity"]
-    end
-
-    StudentBrowser -->|HTTP GET/POST| Router
-    FacultyBrowser -->|HTTP GET/POST| Router
-
-    Router --> AuthMW
-    AuthMW --> RoleMW
-    RoleMW --> HealthCtrl
-    RoleMW --> StudentCtrl
-    RoleMW --> FacultyCtrl
-
-    StudentCtrl --> StudentUC
-    FacultyCtrl --> FacultyUC
-    StudentCtrl --> ViewRenderer
-    FacultyCtrl --> ViewRenderer
-
-    StudentUC --> SubRepoIntf
-    StudentUC --> EvalRepoIntf
-    StudentUC --> FileStorageIntf
-    StudentUC -.->|Returns| SummariesDTO
-
-    FacultyUC --> SubRepoIntf
-    FacultyUC --> EvalRepoIntf
-    FacultyUC -.->|Returns| SummariesDTO
-
-    EvalEngine --> AIGatewayIntf
-    EvalEngine --> SubDomain
-    EvalEngine --> EvalDomain
-
-    LLMAdapter -.->|Implements| AIGatewayIntf
-    MemSubRepo -.->|Implements| SubRepoIntf
-    MemEvalRepo -.->|Implements| EvalRepoIntf
-    DiskFileStorage -.->|Implements| FileStorageIntf
-
-    MemSubRepo --> SubDomain
-    MemEvalRepo --> EvalDomain
-
-    ViewRenderer -.->|Renders Feedback & Status| StudentBrowser
+flowchart LR
+    Student[Student browser] -->|HTML / HTMX| StudentAPI[Student routes and controller]
+    Teacher[Teacher browser] -->|HTML| TeacherAPI[Teacher routes and controller]
+    StudentAPI --> StudentUC[StudentLearningPortal use case]
+    TeacherAPI --> TeacherUC[TeacherLearningPortal use case]
+    StudentUC --> Content[(Learning content repository)]
+    StudentUC --> Sessions[(Session and turn repository)]
+    StudentUC --> Progress[(Concept progress repository)]
+    StudentUC --> Evidence[(Learning evidence repository)]
+    StudentUC --> Agent[TutorAgent service]
+    Agent --> Gateway[LearningAgentGateway]
+    Gateway --> Provider[Stub or external LLM adapter]
+    TeacherUC --> Content
+    TeacherUC --> Progress
+    TeacherUC --> Evidence
+    Legacy[Legacy assessment routes] --> LegacyUC[Submission and evaluation use cases]
 ```
 
-## Component Sequence Diagram (HTMX Partial Refresh)
+The dashboard pages and the JSON API call the same use cases. The UI therefore cannot create a second business-logic path.
+
+## Student learning loop
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Faculty as Faculty Member
-    participant Browser as Faculty Browser (HTMX)
-    participant Router as HTTP Router / Middleware
-    participant Controller as FacultyController
-    participant UseCase as FacultyPortal Usecase
-    participant SubRepo as SubmissionRepository
-    participant Renderer as View Renderer
+    actor Student
+    participant Browser as Student browser
+    participant Controller as LearningController
+    participant UseCase as StudentLearningPortal
+    participant Content as ContentRepository
+    participant Progress as ProgressRepository
+    participant Agent as TutorAgent
+    participant Gateway as LearningAgentGateway
+    participant Turns as SessionRepository
+    participant Evidence as EvidenceRepository
 
-    Faculty->>Browser: Click "Refresh Missing Work Alert"
-    Browser->>Router: GET /faculty/missing?role=faculty (hx-get)
-    Router->>Controller: GetMissingSubmissions(w, r)
-    Controller->>UseCase: GetMissingSubmissions(ctx)
-    UseCase->>SubRepo: ListMissing(ctx)
-    SubRepo-->>UseCase: []Submission (missing status)
-    UseCase-->>Controller: Missing Submissions Data
-    Controller->>Renderer: Render(w, "missing.html", data)
-    Renderer-->>Browser: HTML Partial (HTMX Fragment)
-    Browser-->>Faculty: Dynamic DOM Swap
+    Student->>Browser: Open dashboard or resume learning space
+    Browser->>Controller: GET /student or /student/workspace
+    Controller->>UseCase: Dashboard(studentID)
+    UseCase->>Content: Load course, concepts, objectives, materials
+    UseCase->>Progress: Load concept state
+    UseCase->>Turns: Load recent turns
+    Controller-->>Browser: Render dashboard or learning space
+
+    Student->>Browser: Ask, request a hint, or start practice
+    Browser->>Controller: POST /student/turn or API turn
+    Controller->>UseCase: Continue(sessionID, message, mode)
+    UseCase->>Turns: Append student turn
+    UseCase->>Content: Resolve published context and policy
+    UseCase->>Agent: Build grounded learning request
+    Agent->>Gateway: Typed provider-neutral request
+    Gateway-->>Agent: Explanation, question, hint, or practice
+    Agent-->>UseCase: Validated tutor response
+    UseCase->>Turns: Append tutor turn
+    UseCase->>Evidence: Store formative evidence
+    UseCase->>Progress: Update confidence/status/next action
+    UseCase-->>Controller: Turn result and updated read model
+    Controller-->>Browser: HTMX partial or JSON response
 ```
 
-## Repository Layout
-
-```text
-src/
-  cmd/api/                     # application entrypoint
-  adapter/                     # concrete integrations (in-memory/db/ai providers)
-  bootstrap/                   # dependency wiring and application composition
-  config/                      # runtime settings
-  controller/                  # HTTP request orchestration and IO mapping
-  domain/                      # entities, value objects, and business rules
-  repository/                  # abstraction interfaces for data access
-  routes/                      # route registration and middleware
-  service/                     # evaluation and feedback services
-  templates/                   # server-rendered HTML + HTMX partial templates
-  usecase/                     # application workflows (student/faculty logic)
-  view/                        # rendering helpers
-planning/                      # feature plans and user stories
-docs/                          # project-level documentation
-```
-
-## Layer Responsibilities
-
-- **Domain**: Core entities (`Submission`, `Evaluation`) representing clean domain business rules.
-- **Application / UseCase**: Student and faculty workflows (`StudentPortal`, `FacultyPortal`), generating derived read DTOs (`FacultyDashboard`, `StudentDashboard`, `SubjectSummary`).
-- **Repository & Abstractions**: Segregated interfaces (`SubmissionRepository`, `EvaluationRepository`, `FileStorage`, `AIGateway`) for data persistence, file storage, and AI integrations.
-- **Service**: Evaluation logic split into two tiers: (1) `DefaultEvaluationEngine` — pure-math fallback for seeding/testing; (2) `StagedEvaluationPipeline` — orchestrates `AILogicEvaluator`, `AIQualityEvaluator`, `AIConceptGapEvaluator` concurrently via goroutines/channels, followed by `ScoreGuardrail`. Weights configurable via `WithWeights` functional option.
-- **Adapter**: Infrastructure implementations; thread-safe in-memory repositories (using `sync.RWMutex`); `StubAIGateway` (deterministic rule-based, satisfies `repository.AIGateway`); placeholder stubs for real LLM adapters.
-- **Controller**: HTTP handlers that validate inputs and orchestrate use cases.
-- **Routes & Middleware**: Endpoint registration, session/auth extraction, and role gating middleware (`roleRequired`).
-- **View/Templates**: Server-side HTML rendering with HTMX-based partial refresh for both portals.
-- **Bootstrap/Config**: Environment/config loading and dependency assembly.
-
-## Role-Specific Interfaces
-
-- **Student portal**: submission upload, status tracking, marks, feedback timeline.
-- **Faculty portal**: completion monitoring, missing/overdue alerts, subject/topic mastery summaries.
-
-Both flows are exposed through HTTP handlers with role-aware access checks.
-
-## HTMX + Template Strategy
-
-- Full-page endpoints render initial Student and Faculty pages.
-- HTMX partial endpoints refresh submissions, summaries, and missing-work alerts.
-- Templates are kept modular by role and endpoint intent.
-
-## Container Architecture & Deployment
+## Teacher content loop
 
 ```mermaid
-graph TB
-    subgraph Host["Host Machine / Deployment Host"]
-        PortMapping["Host Port 8080:8080"]
-        
-        subgraph Container["Docker Container (colearning-agent)"]
-            subgraph Security["Non-Root Security Context (appuser:10001)"]
-                AppBinary["Go Executable Binary (/app/colearning-agent)"]
-                TemplatesDir["HTML/HTMX Templates (/app/src/templates/**/*.html)"]
-                EnvVars["Environment Variables (PORT=8080)"]
-            end
-            
-            HealthCheck["HealthCheck (wget http://localhost:8080/healthz)"]
-        end
-    end
-
-    PortMapping --> AppBinary
-    AppBinary --> TemplatesDir
-    AppBinary --> EnvVars
-    HealthCheck -.->|Periodically Polls| AppBinary
+flowchart TD
+    Teacher[Teacher] --> Author[Author concept material]
+    Author --> Publish[Publish versioned material]
+    Publish --> Context[(Published learning context)]
+    Context --> Tutor[Tutor grounding]
+    Tutor --> Student[Student learning turns]
+    Progress[Concept evidence] --> Insight[Teacher class insight]
+    Insight --> Teacher
+    Teacher --> Policy[Configure tutor modes and source policy]
+    Policy --> Tutor
 ```
 
+The teacher owns:
+
+- concepts and learning objectives
+- published learning material
+- source labels and provenance
+- the allowed tutor modes
+- whether external sources may be used
+
+External material is supported by the model, but the first slice uses seeded external references. A production retrieval adapter can be added behind the same content boundary later.
+
+## Domain model
+
+| Concept | Responsibility |
+|---|---|
+| `LearningCourse` | A teacher-owned learning space and tutor policy container. |
+| `LearningConcept` | An ordered idea with prerequisites and estimated learning time. |
+| `LearningObjective` | The observable outcome for a concept. |
+| `LearningMaterial` | Versioned teacher or external context with provenance. |
+| `LearningSession` | A resumable student/course/concept conversation. |
+| `LearningTurn` | A student or tutor message with mode and source references. |
+| `LearningEvidence` | A formative signal extracted from a learning interaction. |
+| `UnderstandingCheck` | An explicit, optional formative check over a student explanation. |
+| `ConceptProgress` | Status, confidence, evidence count, and next action. |
+
+`ConceptProgress.Confidence` is a learning signal, not a final grade. The optional evaluator may contribute evidence, but it does not own the learner's state.
+
+## Tutor agent contract
+
+The agent gateway is provider-neutral:
+
+```text
+LearningRequest
+  learner, course, concept, session
+  current message
+  selected tutor mode
+  objective
+  published materials and source references
+  recent turns
+  learner progress snapshot
+  tutor policy
+
+LearningResponse
+  response kind
+  explanation / question / hint / practice / summary
+  validated source references
+  evidence drafts
+  confidence delta
+  next action
+  escalation flag
+```
+
+Supported modes are data values rather than transport branches:
+
+- `guided`
+- `socratic`
+- `direct`
+- `practice`
+- `hint`
+- `diagnostic`
+
+The response policy rejects empty or unknown response kinds, constrains confidence deltas, and removes source references that are not part of the current published context. External references are removed when the course policy disallows them.
+
+## Optional formative evaluation
+
+Evaluation is deliberately outside the normal learning request path:
+
+```mermaid
+flowchart LR
+    Turn[Student explanation or practice attempt] -. explicit request .-> Check[UnderstandingCheck]
+    Check --> Evidence[LearningEvidence]
+    Evidence --> Progress[ConceptProgress]
+```
+
+The first slice includes a lightweight `UnderstandingCheck` endpoint and a deterministic formative-check gateway. It evaluates the most recent student turn, stores evidence, and updates concept progress. The legacy `StagedEvaluationPipeline` remains isolated in `service/evaluation.go` for compatibility work and is not wired into the primary co-learning bootstrap. A production checker can add rubric/provider versioning without coupling the tutor to assignment submissions or final grades.
+
+## Repository and adapter boundaries
+
+Current learning ports:
+
+- `LearningContentRepository`
+- `LearningSessionRepository`
+- `ConceptProgressRepository`
+- `LearningEvidenceRepository`
+- `UnderstandingCheckRepository`
+- `LearningAgentGateway`
+- `FormativeCheckGateway`
+
+Current adapters:
+
+- thread-safe in-memory repositories
+- deterministic `StubLearningAgentGateway`
+- deterministic `StubFormativeCheckGateway`
+- server-rendered templates with a shared CSS token system
+- legacy in-memory submission/evaluation repositories behind compatibility routes
+
+Production follow-up adapters should provide durable persistence, authenticated actors, source fetching/normalization, and a real model provider. Source content must be treated as untrusted input and cannot override tutor instructions.
+
+## HTTP surface
+
+### HTML surfaces
+
+| Route | Purpose |
+|---|---|
+| `GET /` | Product landing and role entry point |
+| `GET /student` | Student learning dashboard |
+| `GET /student/workspace` | Resumable tutor conversation |
+| `POST /student/session` | Start or resume a session |
+| `POST /student/turn` | Submit a student turn; supports HTMX partial response |
+| `GET /teacher` | Teacher class dashboard |
+| `GET /teacher/content` | Content studio and tutor policy controls |
+| `POST /teacher/materials` | Publish a learning note |
+| `POST /teacher/tutor-policy` | Update allowed tutor modes and source policy |
+
+The `/faculty` routes remain as compatibility aliases; the product language and canonical path are **teacher**. The API accepts `role=teacher` or `role=faculty` for this transition.
+
+### JSON API
+
+The versioned contract is documented in [`docs/api.md`](api.md). The first slice exposes:
+
+```text
+GET  /api/v1/student/dashboard
+POST /api/v1/student/sessions
+GET  /api/v1/student/sessions/{session_id}
+POST /api/v1/student/sessions/{session_id}/turns
+POST /api/v1/student/sessions/{session_id}/understanding-checks
+GET  /api/v1/teacher/dashboard
+POST /api/v1/teacher/materials
+PUT  /api/v1/teacher/courses/{course_id}/tutor-policy
+```
+
+The current middleware uses a query parameter or `X-Role` header only to make the demo runnable. A real authentication adapter must replace this before deployment; client-supplied student IDs must not be treated as authority in production.
+
+## UI architecture
+
+The UI is intentionally data-oriented and polished without pretending that the core is complete.
+
+### Student dashboard
+
+- Continue-learning hero
+- current concept confidence and next action
+- ordered concept path
+- recent conversation activity
+- source/context library
+- teacher and tutor-policy context
+
+### Student learning space
+
+- persistent transcript
+- configurable tutor mode selector
+- source chips on tutor responses
+- clear empty state before the first turn
+- HTMX partial refresh for new turns
+
+### Teacher dashboard
+
+- class-level concept confidence
+- support queue
+- evidence activity stream
+- content health
+- live tutor-policy summary
+
+### Teacher content studio
+
+- published material list
+- provenance labels and references
+- publish material form
+- configurable tutor modes
+- external-source policy
+
+## Container architecture and deployment
+
+The current image keeps the same non-root Go process and adds the shared template assets to the image:
+
+```mermaid
+flowchart TB
+    Host[Host port 8080:8080] --> Binary[Go API binary]
+    Binary --> Templates[HTML templates and CSS assets]
+    Binary --> Memory[Process-local learning repositories]
+    Health[Health check /healthz] -.-> Binary
+    Env[PORT and provider configuration] --> Binary
+```
+
+The first slice intentionally uses process-local memory so the UI and API can be reviewed without introducing a database migration. A durable adapter can replace the memory repositories without changing the browser or JSON contract.
+
+## Compatibility and migration
+
+The old assessment model remains in a separate path:
+
+```text
+legacy /student/submit       -> Submission -> Evaluation
+legacy /faculty/summary      -> Submission/Evaluation aggregates
+new    /student/turn         -> LearningSession -> LearningTurn -> Evidence
+new    /teacher/content      -> LearningMaterial + TutorPolicy
+```
+
+This separation is intentional. It lets the new UI and API contract stabilize before we decide whether any assessment concepts should be migrated into formative checks.
+
+## Current limitations and next steps
+
+1. Replace demo role/student identity with authenticated actors and ownership checks.
+2. Add durable database repositories behind the existing ports.
+3. Add a bounded external-source fetcher with URL, redirect, size, and content normalization controls.
+4. Add a real LLM adapter and citation verification behind `LearningAgentGateway`.
+5. Add provider/versioned rubric policy to the optional understanding check.
+6. Add authorization tests for every teacher, student, and session endpoint.
+7. Add browser-level tests for the shared dashboard shell and HTMX turn flow.
+
+The problem statement remains unchanged as the original requirement record. Product interpretation and implementation decisions live in this document and the API/UI documentation.

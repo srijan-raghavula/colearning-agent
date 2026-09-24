@@ -1,0 +1,24 @@
+{{define "student/workspace_conversation.html"}}
+<div id="conversation-inner">
+  {{if .Workspace.Turns}}
+    {{range .Workspace.Turns}}
+      <div class="message {{if eq .Role "tutor"}}tutor{{end}}">
+        <div class="message-avatar">{{if eq .Role "tutor"}}✦{{else}}{{slice $.Workspace.Dashboard.StudentName 0 1}}{{end}}</div>
+        <div class="message-body">
+          <div class="message-meta">{{if eq .Role "tutor"}}CoLearn tutor · {{.Mode.Label}}{{else}}You · {{.Mode.Label}}{{end}}</div>
+          <div class="bubble"><p>{{.Body}}</p>{{if .Sources}}<div class="source-chips">{{range .Sources}}<span class="source-chip">{{if .IsExternal}}↗{{else}}✦{{end}} {{.Title}}</span>{{end}}</div>{{end}}</div>
+        </div>
+      </div>
+    {{end}}
+  {{else}}
+    <div class="conversation-empty"><div class="empty-icon">✦</div><strong>Start with what you are wondering.</strong><span>Ask about a step, request a hint, or tell the tutor what feels unclear.</span></div>
+  {{end}}
+  {{if .Workspace.Check}}<div class="card card-pad" style="background:#f0faf8;border-color:#cceee6;box-shadow:none;margin:0 0 20px"><div class="between"><div><div class="context-label" style="color:#2a8879">Optional understanding check</div><strong style="font-size:13px">{{.Workspace.Check.Summary}}</strong></div><span class="badge badge-teal">Formative</span></div><ul class="list-reset mt-16" style="display:grid;gap:6px">{{range .Workspace.Check.Feedback}}<li class="small" style="color:#4d6d6a">· {{.}}</li>{{end}}</ul><div class="between mt-16"><span class="tiny" style="color:#4d6d6a">Next: {{.Workspace.Check.NextAction}}</span><span class="tiny faint">{{.Workspace.Check.CreatedAt.Format "Jan 2, 15:04"}}</span></div></div>{{end}}
+  <form class="composer" hx-post="/student/turn?role=student&amp;student_id={{.StudentID}}" hx-target="#conversation-inner" hx-swap="outerHTML" method="post">
+    <input type="hidden" name="student_id" value="{{.StudentID}}">
+    <input type="hidden" name="session_id" value="{{.Workspace.Session.ID}}">
+    <div class="composer-row"><textarea class="textarea" name="message" placeholder="Ask your tutor something…" required></textarea><button class="btn btn-primary" type="submit">Send <span>→</span></button></div>
+    <div class="composer-tools"><div class="mode-select"><span class="tiny muted">Tutor style</span><select class="select" name="mode"><option value="guided" {{if eq .Workspace.SelectedMode "guided"}}selected{{end}}>Guided path</option><option value="socratic" {{if eq .Workspace.SelectedMode "socratic"}}selected{{end}}>Socratic</option><option value="direct" {{if eq .Workspace.SelectedMode "direct"}}selected{{end}}>Direct explanation</option><option value="practice" {{if eq .Workspace.SelectedMode "practice"}}selected{{end}}>Practice first</option><option value="hint" {{if eq .Workspace.SelectedMode "hint"}}selected{{end}}>Hints only</option><option value="diagnostic" {{if eq .Workspace.SelectedMode "diagnostic"}}selected{{end}}>Diagnose first</option></select></div><span class="tiny faint">Your turn is saved to the learning thread.</span></div>
+  </form>
+</div>
+{{end}}

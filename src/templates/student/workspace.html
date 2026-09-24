@@ -1,0 +1,49 @@
+{{define "student/workspace.html"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Workspace.Concept.Title}} · Learning space · CoLearn</title>
+  <link rel="stylesheet" href="/static/assets/app.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/student?role=student&amp;student_id={{.StudentID}}"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Learning space</span></span></a>
+      <nav class="main-nav"><a href="/student?role=student&amp;student_id={{.StudentID}}">Overview</a><a class="active" href="/student/workspace?role=student&amp;student_id={{.StudentID}}">Learning space</a><a href="/teacher?role=teacher">Teacher view</a></nav>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-meta"><span class="role-pill"><span class="role-dot"></span>{{.Workspace.SelectedMode.Label}}</span><span class="avatar teal">{{slice .Workspace.Dashboard.StudentName 0 1}}</span></div>
+    </header>
+    <main class="page">
+      {{if .Workspace.Notice}}<div class="alert alert-success"><span>✓</span><span>{{.Workspace.Notice}}</span></div>{{end}}
+      <div class="workspace-header">
+        <div><div class="eyebrow">{{.Workspace.Dashboard.Course.Title}} · Concept {{.Workspace.Concept.Order}}</div><h1 class="workspace-title">{{.Workspace.Concept.Title}}</h1><p class="page-lede">{{.Workspace.Concept.Summary}}</p></div>
+        <div class="page-actions"><a class="btn btn-secondary" href="/student?role=student&amp;student_id={{.StudentID}}">← Back to overview</a></div>
+      </div>
+      <div class="tabs"><a class="tab active" href="#conversation">Conversation</a><a class="tab" href="#context">Sources &amp; goal</a><span style="flex:1"></span><span class="badge badge-teal">{{.Workspace.Dashboard.FeaturedProgress.Percent}}% confidence</span></div>
+
+      <section class="workspace-layout">
+        <article class="card card-pad workspace-panel">
+          <div id="conversation" class="conversation">
+            {{template "student/workspace_conversation.html" .}}
+          </div>
+        </article>
+        <aside id="context" class="card card-pad context-card">
+          <div class="card-header"><div><h2 class="card-title">Learning brief</h2><p class="card-subtitle">The context shaping this turn.</p></div><span class="badge badge-blue">{{.Workspace.Concept.Level}}</span></div>
+          <div class="context-list">
+            <div class="context-item"><div class="context-label">Goal</div><div class="context-value">{{if .Workspace.Dashboard.Objective.Description}}{{.Workspace.Dashboard.Objective.Description}}{{else}}Build a durable understanding of {{.Workspace.Concept.Title}}.{{end}}</div></div>
+            {{if .Workspace.Dashboard.Objective.Outcomes}}<div class="context-item"><div class="context-label">You will be able to</div><div class="context-copy">{{range .Workspace.Dashboard.Objective.Outcomes}}<div>· {{.}}</div>{{end}}</div></div>{{end}}
+            <div class="context-item"><div class="context-label">Tutor mode</div><div class="context-value">{{.Workspace.SelectedMode.Label}}</div><div class="context-copy">{{.Workspace.Dashboard.Policy.SourcePolicy}}</div></div>
+          </div>
+          <div class="mt-24"><div class="context-label">Sources in context</div><div class="source-list mt-16">{{range .Workspace.Materials}}<div class="source-item"><span class="source-icon">{{if .Source.IsExternal}}↗{{else}}✦{{end}}</span><div><div class="source-title">{{.Title}}</div><div class="source-meta">{{if .Source.IsExternal}}External · labeled{{else}}Teacher material{{end}}</div></div></div>{{else}}<div class="muted small">No source material is published for this concept yet.</div>{{end}}</div></div>
+          <div class="focus-next mt-24">Next suggested action<strong>{{.Workspace.Dashboard.FeaturedProgress.NextAction}}</strong></div>
+          <form method="post" action="/student/check?role=student&amp;student_id={{.StudentID}}" class="mt-16"><input type="hidden" name="session_id" value="{{.Workspace.Session.ID}}"><input type="hidden" name="mode" value="{{.Workspace.SelectedMode}}"><button class="btn btn-secondary btn-block" type="submit">Check my understanding <span>↗</span></button></form>
+        </aside>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+{{end}}
