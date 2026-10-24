@@ -120,9 +120,9 @@ func TestStagedPipelineReturnsValidEvaluation(t *testing.T) {
 	defer cancel()
 
 	submission := domain.Submission{
-		ID:        "SUB-101",
-		StudentID: "S-001",
-		SubjectID: "CS-101",
+		ID:         "SUB-101",
+		StudentID:  "S-001",
+		SubjectID:  "CS-101",
 		Attachment: "func solve() { return edge case result }",
 	}
 	topicScores := []domain.TopicScore{

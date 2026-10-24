@@ -62,7 +62,14 @@ type StudentLearningPortal struct {
 	checks   repository.UnderstandingCheckRepository
 	agent    *service.TutorAgent
 	checker  *service.UnderstandingCheckService
+	onChange func(context.Context)
 }
+
+// LearningChangeHook is invoked after a mutating learning workflow has fully
+// committed to the repositories. Errors are reported to the hook so that
+// application workflows never fail after a successful domain write; the
+// runtime layer decides how to surface persistence problems.
+type LearningChangeHook func(context.Context)
 
 func NewStudentLearningPortal(
 	content repository.LearningContentRepository,
@@ -82,6 +89,20 @@ func NewStudentLearningPortal(
 		agent:    agent,
 		checker:  checker,
 	}
+}
+
+// WithChangeHook attaches a durability callback (e.g. a snapshot writer).
+// It must be called before the portal is handed to controllers.
+func (p StudentLearningPortal) WithChangeHook(hook LearningChangeHook) StudentLearningPortal {
+	p.onChange = hook
+	return p
+}
+
+func (p StudentLearningPortal) persistChange(ctx context.Context) {
+	if p.onChange == nil {
+		return
+	}
+	p.onChange(ctx)
 }
 
 func (p StudentLearningPortal) Dashboard(ctx context.Context, studentID string) (domain.StudentLearningDashboard, error) {
@@ -464,6 +485,7 @@ func (p StudentLearningPortal) CheckUnderstanding(ctx context.Context, sessionID
 	if err := p.progress.Save(ctx, progressRecord); err != nil {
 		return domain.UnderstandingCheck{}, err
 	}
+	p.persistChange(ctx)
 	return check, nil
 }
 
@@ -610,6 +632,7 @@ func (p StudentLearningPortal) Continue(ctx context.Context, req SendLearningTur
 		return domain.LearningTurnResult{}, err
 	}
 
+	p.persistChange(ctx)
 	return domain.LearningTurnResult{
 		Session:    session,
 		Turn:       tutorTurn,
@@ -710,10 +733,24 @@ type TeacherLearningPortal struct {
 	content  repository.LearningContentRepository
 	progress repository.ConceptProgressRepository
 	evidence repository.LearningEvidenceRepository
+	onChange func(context.Context)
 }
 
 func NewTeacherLearningPortal(content repository.LearningContentRepository, progress repository.ConceptProgressRepository, evidence repository.LearningEvidenceRepository) TeacherLearningPortal {
 	return TeacherLearningPortal{content: content, progress: progress, evidence: evidence}
+}
+
+// WithChangeHook attaches a durability callback for teacher-side mutations.
+func (p TeacherLearningPortal) WithChangeHook(hook LearningChangeHook) TeacherLearningPortal {
+	p.onChange = hook
+	return p
+}
+
+func (p TeacherLearningPortal) persistChange(ctx context.Context) {
+	if p.onChange == nil {
+		return
+	}
+	p.onChange(ctx)
 }
 
 func (p TeacherLearningPortal) Dashboard(ctx context.Context) (domain.TeacherLearningDashboard, error) {
@@ -888,6 +925,7 @@ func (p TeacherLearningPortal) UpdateTutorPolicy(ctx context.Context, req Update
 	if err := p.content.SaveCourse(ctx, course); err != nil {
 		return domain.TutorPolicy{}, err
 	}
+	p.persistChange(ctx)
 	return course.TutorPolicy, nil
 }
 
@@ -947,5 +985,6 @@ func (p TeacherLearningPortal) PublishMaterial(ctx context.Context, req PublishM
 	if err := p.content.SaveMaterial(ctx, material); err != nil {
 		return domain.LearningMaterial{}, err
 	}
+	p.persistChange(ctx)
 	return material, nil
 }

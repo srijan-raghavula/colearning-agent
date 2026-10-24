@@ -1,10 +1,12 @@
 package bootstrap
 
 import (
+	"context"
 	"log"
 	"time"
 
 	"github.com/srijan-raghavula/colearning-agent/src/adapter/memory"
+	"github.com/srijan-raghavula/colearning-agent/src/adapter/persist"
 	"github.com/srijan-raghavula/colearning-agent/src/config"
 	"github.com/srijan-raghavula/colearning-agent/src/controller"
 	"github.com/srijan-raghavula/colearning-agent/src/domain"
@@ -17,6 +19,9 @@ import (
 type App struct {
 	Config config.HTTP
 	Routes routes.Dependencies
+	// Persist flushes the durable learning snapshot on shutdown; nil when the
+	// durable store is disabled.
+	Persist func(ctx context.Context)
 }
 
 func NewApp() App {
@@ -111,13 +116,42 @@ func NewApp() App {
 	progressRepo := memory.NewConceptProgressRepository(progress)
 	evidenceRepo := memory.NewLearningEvidenceRepository(evidence)
 	checkRepo := memory.NewUnderstandingCheckRepository(nil)
+
+	// ── Durable learning state ──────────────────────────────────────────────
+	// A file-backed snapshot of the repositories survives restarts. First boot
+	// keeps the seeded demo state and writes a baseline snapshot; later boots
+	// restore the last saved state in place of the seeds.
+	learningStoreConfig := config.LoadLearningStore()
+	var learningPersistHook usecase.LearningChangeHook
+	var appPersist func(context.Context)
+	if learningStoreConfig.Enabled {
+		snapshotStore := persist.NewLearningStore(learningStoreConfig.Path, contentRepo, sessionRepo, progressRepo, evidenceRepo, checkRepo)
+		loaded, err := snapshotStore.Load(context.Background())
+		switch {
+		case err != nil:
+			log.Printf("learning snapshot at %s could not be restored (%v); continuing with seeded state", snapshotStore.Path(), err)
+		case loaded:
+			log.Printf("restored learning state from %s", snapshotStore.Path())
+		default:
+			if err := snapshotStore.Save(context.Background()); err != nil {
+				log.Printf("initial learning snapshot write failed: %v", err)
+			}
+		}
+		learningPersistHook = func(ctx context.Context) {
+			if err := snapshotStore.Save(ctx); err != nil {
+				log.Printf("learning snapshot save failed: %v", err)
+			}
+		}
+		appPersist = learningPersistHook
+	}
+
 	learningAgent := service.NewTutorAgent(memory.NewStubLearningAgentGateway())
 	understandingChecker := service.NewUnderstandingCheckService(memory.NewStubFormativeCheckGateway())
 
 	studentPortal := usecase.NewStudentPortal(submissionRepo, evaluationRepo)
 	facultyPortal := usecase.NewFacultyPortal(submissionRepo, evaluationRepo)
-	studentLearningPortal := usecase.NewStudentLearningPortal(contentRepo, sessionRepo, progressRepo, evidenceRepo, checkRepo, learningAgent, understandingChecker)
-	teacherLearningPortal := usecase.NewTeacherLearningPortal(contentRepo, progressRepo, evidenceRepo)
+	studentLearningPortal := usecase.NewStudentLearningPortal(contentRepo, sessionRepo, progressRepo, evidenceRepo, checkRepo, learningAgent, understandingChecker).WithChangeHook(learningPersistHook)
+	teacherLearningPortal := usecase.NewTeacherLearningPortal(contentRepo, progressRepo, evidenceRepo).WithChangeHook(learningPersistHook)
 
 	renderer, err := view.NewRenderer("src/templates/**/*.html")
 	if err != nil {
@@ -132,5 +166,6 @@ func NewApp() App {
 			Faculty:  controller.NewFacultyController(facultyPortal, renderer),
 			Learning: controller.NewLearningController(studentLearningPortal, teacherLearningPortal, renderer),
 		},
+		Persist: appPersist,
 	}
 }
