@@ -2,6 +2,8 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -24,7 +26,7 @@ type App struct {
 	Persist func(ctx context.Context)
 }
 
-func NewApp() App {
+func NewApp() (App, error) {
 	httpConfig := config.LoadHTTP()
 
 	now := time.Now().UTC()
@@ -104,6 +106,7 @@ func NewApp() App {
 		{ID: "turn-s001-1", SessionID: "session-s001-linear", Role: domain.LearningTurnTutor, Kind: "explanation", Mode: domain.TutorModeGuided, Body: "An equation is a relationship waiting to be balanced. We can isolate the unknown while preserving what both sides have in common.", Sources: []domain.LearningSourceRef{materials[0].Source}, CreatedAt: now.Add(-48 * time.Minute)},
 		{ID: "turn-s001-2", SessionID: "session-s001-linear", Role: domain.LearningTurnStudent, Kind: "student_message", Mode: domain.TutorModeGuided, Body: "I can isolate it, but I am not sure how to check the answer.", CreatedAt: now.Add(-12 * time.Minute)},
 		{ID: "turn-s001-3", SessionID: "session-s001-linear", Role: domain.LearningTurnTutor, Kind: "hint", Mode: domain.TutorModeGuided, Body: "Try substituting your result into the original equation. The two sides should describe the same value.", Sources: []domain.LearningSourceRef{materials[0].Source}, CreatedAt: now.Add(-11 * time.Minute)},
+		{ID: "turn-s002-1", SessionID: "session-s002-graph", Role: domain.LearningTurnStudent, Kind: "student_message", Mode: domain.TutorModeSocratic, Body: "I keep mixing up slope and intercept.", CreatedAt: now.Add(-30 * time.Minute)},
 	}
 	evidence := []domain.LearningEvidence{
 		{ID: "evidence-1", SessionID: "session-s001-linear", TurnID: "turn-s001-1", StudentID: "S-001", CourseID: course.ID, ConceptID: "linear-equations", Kind: "explanation", Note: "Introduced balance as the core relationship.", ObservedAt: now.Add(-48 * time.Minute)},
@@ -126,17 +129,23 @@ func NewApp() App {
 	var appPersist func(context.Context)
 	if learningStoreConfig.Enabled {
 		snapshotStore := persist.NewLearningStore(learningStoreConfig.Path, contentRepo, sessionRepo, progressRepo, evidenceRepo, checkRepo)
-		loaded, err := snapshotStore.Load(context.Background())
-		switch {
-		case err != nil:
-			log.Printf("learning snapshot at %s could not be restored (%v); continuing with seeded state", snapshotStore.Path(), err)
-		case loaded:
-			log.Printf("restored learning state from %s", snapshotStore.Path())
-		default:
-			if err := snapshotStore.Save(context.Background()); err != nil {
-				log.Printf("initial learning snapshot write failed: %v", err)
+		loaded, loadErr := snapshotStore.Load(context.Background())
+		if loadErr != nil {
+			var corrupt *persist.ErrCorruptSnapshot
+			if !errors.As(loadErr, &corrupt) {
+				return App{}, fmt.Errorf("load learning snapshot %q: %w", snapshotStore.Path(), loadErr)
 			}
+
+			log.Printf("learning snapshot at %s was corrupt and quarantined at %s (%v); reseeding durable state", snapshotStore.Path(), corrupt.QuarantinePath, corrupt.Cause)
+			if err := snapshotStore.Save(context.Background()); err != nil {
+				return App{}, fmt.Errorf("write quarantine fallback baseline learning snapshot %q after preserving corrupt data at %q: %w", snapshotStore.Path(), corrupt.QuarantinePath, err)
+			}
+		} else if loaded {
+			log.Printf("restored learning state from %s", snapshotStore.Path())
+		} else if err := snapshotStore.Save(context.Background()); err != nil {
+			return App{}, fmt.Errorf("write initial learning snapshot baseline %q: %w", snapshotStore.Path(), err)
 		}
+
 		learningPersistHook = func(ctx context.Context) {
 			if err := snapshotStore.Save(ctx); err != nil {
 				log.Printf("learning snapshot save failed: %v", err)
@@ -155,7 +164,7 @@ func NewApp() App {
 
 	renderer, err := view.NewRenderer("src/templates/**/*.html")
 	if err != nil {
-		log.Fatalf("failed to load templates: %v", err)
+		return App{}, fmt.Errorf("load application templates: %w", err)
 	}
 
 	return App{
@@ -167,5 +176,5 @@ func NewApp() App {
 			Learning: controller.NewLearningController(studentLearningPortal, teacherLearningPortal, renderer),
 		},
 		Persist: appPersist,
-	}
+	}, nil
 }

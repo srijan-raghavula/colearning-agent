@@ -27,7 +27,7 @@ func newTestRepositories() (*memory.LearningContentRepository, *memory.LearningS
 	)
 	progress := memory.NewConceptProgressRepository([]domain.ConceptProgress{{StudentID: "S-001", CourseID: "course-1", ConceptID: "linear-equations", Status: domain.ConceptProgressLearning, Confidence: 62, EvidenceCount: 3}})
 	evidence := memory.NewLearningEvidenceRepository([]domain.LearningEvidence{{ID: "evidence-1", SessionID: "session-1", StudentID: "S-001", CourseID: "course-1", ConceptID: "linear-equations", Kind: "explanation", Note: "Balance acknowledged", ObservedAt: now}})
-	checks := memory.NewUnderstandingCheckRepository([]domain.UnderstandingCheck{{ID: "check-1", SessionID: "session-1", StudentID: "S-001", CourseID: "course-1", ConceptID: "linear-equations", Summary: "Explain the check", CreatedAt: now}})
+	checks := memory.NewUnderstandingCheckRepository([]domain.UnderstandingCheck{{ID: "check-1", SessionID: "session-1", TurnID: "turn-2", StudentID: "S-001", CourseID: "course-1", ConceptID: "linear-equations", Summary: "Explain the check", CreatedAt: now}})
 	return content, sessions, progress, evidence, checks
 }
 

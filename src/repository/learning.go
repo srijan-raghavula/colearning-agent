@@ -29,7 +29,7 @@ type LearningContentRepository interface {
 
 type LearningSessionRepository interface {
 	FindByID(ctx context.Context, id string) (domain.LearningSession, bool, error)
-	FindActive(ctx context.Context, studentID, courseID string) (domain.LearningSession, bool, error)
+	FindActive(ctx context.Context, studentID, courseID, conceptID string) (domain.LearningSession, bool, error)
 	Save(ctx context.Context, session domain.LearningSession) error
 	AppendTurn(ctx context.Context, turn domain.LearningTurn) error
 	ListTurns(ctx context.Context, sessionID string) ([]domain.LearningTurn, error)

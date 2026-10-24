@@ -19,7 +19,7 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 
 	// Product surfaces. The demo role is carried by a query parameter or
 	// X-Role header until a real identity provider is introduced.
-	mux.HandleFunc("/", deps.Learning.LandingPage)
+	mux.HandleFunc("GET /{$}", deps.Learning.LandingPage)
 	mux.HandleFunc("/student", roleRequired("student", deps.Learning.StudentPage))
 	mux.HandleFunc("/student/workspace", roleRequired("student", deps.Learning.StudentWorkspace))
 	mux.HandleFunc("/student/session", roleRequired("student", deps.Learning.StartStudentSession))
@@ -39,14 +39,20 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 
 	// Versioned JSON API. The HTML portal and API intentionally share the same
 	// use cases so the UI cannot accidentally grow a second business path.
-	mux.HandleFunc("GET /api/v1/student/dashboard", roleRequired("student", deps.Learning.StudentDashboardJSON))
-	mux.HandleFunc("POST /api/v1/student/sessions", roleRequired("student", deps.Learning.StartStudentSessionJSON))
-	mux.HandleFunc("GET /api/v1/student/sessions/{session_id}", roleRequired("student", deps.Learning.StudentSessionJSON))
-	mux.HandleFunc("POST /api/v1/student/sessions/{session_id}/turns", roleRequired("student", deps.Learning.SendStudentTurnJSON))
-	mux.HandleFunc("POST /api/v1/student/sessions/{session_id}/understanding-checks", roleRequired("student", deps.Learning.CheckStudentUnderstandingJSON))
-	mux.HandleFunc("GET /api/v1/teacher/dashboard", teacherRoleRequired(deps.Learning.TeacherDashboardJSON))
-	mux.HandleFunc("POST /api/v1/teacher/materials", teacherRoleRequired(deps.Learning.PublishMaterialJSON))
-	mux.HandleFunc("PUT /api/v1/teacher/courses/{course_id}/tutor-policy", teacherRoleRequired(deps.Learning.UpdateTutorPolicyJSON))
+	handleAPI(mux, http.MethodGet, "/api/v1/student/dashboard", apiRoleRequired("student", deps.Learning.StudentDashboardJSON))
+	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions", apiRoleRequired("student", deps.Learning.StartStudentSessionJSON))
+	handleAPI(mux, http.MethodGet, "/api/v1/student/sessions/{session_id}", apiRoleRequired("student", deps.Learning.StudentSessionJSON))
+	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions/{session_id}/turns", apiRoleRequired("student", deps.Learning.SendStudentTurnJSON))
+	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions/{session_id}/understanding-checks", apiRoleRequired("student", deps.Learning.CheckStudentUnderstandingJSON))
+	handleAPI(mux, http.MethodGet, "/api/v1/teacher/dashboard", apiTeacherRoleRequired(deps.Learning.TeacherDashboardJSON))
+	handleAPI(mux, http.MethodPost, "/api/v1/teacher/materials", apiTeacherRoleRequired(deps.Learning.PublishMaterialJSON))
+	handleAPI(mux, http.MethodPut, "/api/v1/teacher/courses/{course_id}/tutor-policy", apiTeacherRoleRequired(deps.Learning.UpdateTutorPolicyJSON))
+
+	// Keep API routing errors inside the v1 JSON contract. Known API paths have
+	// method fallbacks installed by handleAPI; this subtree fallback handles
+	// paths that are not part of the contract.
+	mux.HandleFunc("/api/v1", apiNotFound)
+	mux.HandleFunc("/api/v1/", apiNotFound)
 
 	// Legacy assessment endpoints remain available while the co-learning
 	// surface is proven, but they are no longer linked from the product UI.
