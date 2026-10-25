@@ -1,13 +1,18 @@
 package persist
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/srijan-raghavula/colearning-agent/src/adapter/memory"
 	"github.com/srijan-raghavula/colearning-agent/src/domain"
+	"github.com/srijan-raghavula/colearning-agent/src/repository"
 )
 
 func newTestRepositories() (*memory.LearningContentRepository, *memory.LearningSessionRepository, *memory.ConceptProgressRepository, *memory.LearningEvidenceRepository, *memory.UnderstandingCheckRepository) {
@@ -92,6 +97,55 @@ func TestLearningStoreRoundTrip(t *testing.T) {
 	check, ok, err := freshChecks.FindLatestBySession(ctx, "session-1")
 	if err != nil || !ok || check.Summary != "Explain the check" {
 		t.Fatalf("understanding check not restored (ok=%v err=%v): %+v", ok, err, check)
+	}
+}
+
+func TestLearningStorePreservesUnsupportedSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "learning-state.json")
+	original := []byte(`{"version":999,"courses":[]}`)
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatalf("write unsupported snapshot: %v", err)
+	}
+
+	content, sessions, progress, evidence, checks := newTestRepositories()
+	store := NewLearningStore(path, content, sessions, progress, evidence, checks)
+	loaded, err := store.Load(context.Background())
+	var unsupported ErrUnsupportedSnapshot
+	if loaded || !errors.As(err, &unsupported) || unsupported.Version != 999 {
+		t.Fatalf("expected unsupported-version error, loaded=%v err=%v", loaded, err)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read unsupported snapshot: %v", err)
+	}
+	if !bytes.Equal(persisted, original) {
+		t.Fatalf("unsupported snapshot was modified: %s", persisted)
+	}
+}
+
+func TestLearningStoreQuarantinesCorruptSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "learning-state.json")
+	original := []byte(fmt.Sprintf(`{"version":%d,"courses":[]}`, repository.LearningSnapshotVersion))
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatalf("write corrupt snapshot: %v", err)
+	}
+
+	content, sessions, progress, evidence, checks := newTestRepositories()
+	store := NewLearningStore(path, content, sessions, progress, evidence, checks)
+	loaded, err := store.Load(context.Background())
+	var corrupt *ErrCorruptSnapshot
+	if loaded || !errors.As(err, &corrupt) {
+		t.Fatalf("expected corrupt-snapshot error, loaded=%v err=%v", loaded, err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("corrupt snapshot should be moved from the active path, stat err=%v", err)
+	}
+	quarantined, err := os.ReadFile(corrupt.QuarantinePath)
+	if err != nil {
+		t.Fatalf("read quarantined snapshot: %v", err)
+	}
+	if !bytes.Equal(quarantined, original) {
+		t.Fatalf("quarantine did not preserve original bytes: %s", quarantined)
 	}
 }
 

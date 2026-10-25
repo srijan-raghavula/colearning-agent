@@ -72,11 +72,57 @@ docker compose restart app && curl -i http://localhost:8080/healthz   # state sh
 docker compose down
 ```
 
-## Report back
+## Verification results — 2026-10-25
 
-- Any build/vet/test/race failures with file + line.
-- Whether the restart preserved state.
-- Whether HTTP status/envelope behaviors match `docs/api.md`.
-- Anything out of scope — any real AI-provider or UI code should **not** be present.
+### Environment and permissions
 
-Do not fix anything yet — just report what passes and what fails.
+- The host has no `go` executable. Go checks were run in the official
+  `golang:1.24-alpine` container (Go 1.24.13); no Go toolchain was installed on
+  the host.
+- Docker Engine 29.8.0 and Docker Compose 2.40.3 were available. Compose warned
+  that Buildx was missing, but the image build completed successfully using the
+  Docker driver.
+- The race test needs a C compiler on Alpine, so `gcc` and `musl-dev` were
+  installed only in its disposable test container. No host packages were
+  installed.
+- `scripts/smoke-persistence.sh` was not run verbatim because it invokes host
+  `go run`; its persistence scenario was exercised against the Compose app
+  instead.
+
+### Checks
+
+- `gofmt -l ./src`: passed; no files listed.
+- `go vet ./...`, `go build ./...`, `go test ./...`, and `go test -race ./...`:
+  all passed in the Go container.
+- `docker compose build app`: passed.
+- Runtime contract: `/healthz` returned `200`; an unknown `/api/v1` path
+  returned JSON `404`; `PUT` on the student dashboard returned JSON `405`; and
+  a teacher role on the student dashboard returned JSON `403`.
+- Runtime JSON checks passed for missing/wrong media type (`415`), malformed,
+  unknown-field, multiple-value, and empty/null bodies (`400`), and a body over
+  1 MiB (`413`). Error responses used the JSON error envelope; turn `sources`
+  serialized as `[]`.
+- Persistence: a posted student turn was present after restarting the app, and
+  startup logged that it restored the learning snapshot. Compose created the
+  `colearning-agent_learning-data` volume during this run, so this verifies
+  persistence across restart on that volume, not migration of data from the
+  previously running container.
+- The service already running before the rebuild was stale: unknown routes and
+  wrong methods returned the landing page with `200`. Recreating it from the
+  checked-out Compose configuration corrected both behaviors.
+
+### Regression tests added
+
+- Keyed workflow locks: same-key serialization, independent keys, and registry
+  cleanup after the final user releases a key.
+- Tutor retry behavior: a failed provider request retains the student turn;
+  only an identical message and mode can retry it.
+- Snapshot handling: unsupported versions remain untouched, and corrupt
+  snapshots are quarantined with their original bytes preserved.
+- JSON decoding and DTOs: strict media type/size/shape handling and empty
+  `sources` serialization.
+
+No backend implementation defect was found in the verified scope, so no
+production behavior was changed. The stub tutor remains in use; no real
+AI-provider integration or UI work was added. The Compose service was left
+running after the smoke checks.
