@@ -1,15 +1,33 @@
 name: colearning-agent
 
+x-app-image: &app-image
+  image: colearning-agent:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+
 services:
+  volume-init:
+    <<: *app-image
+    user: "0:0"
+    entrypoint: ["/bin/chown"]
+    command: ["-R", "10001:10001", "/app/data"]
+    volumes:
+      - learning-data:/app/data
+    restart: "no"
+
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *app-image
     container_name: colearning-agent
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
       - PORT=8080
+    volumes:
+      - learning-data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/healthz || exit 1"]
@@ -17,3 +35,6 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+volumes:
+  learning-data:

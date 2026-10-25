@@ -15,7 +15,10 @@ import (
 )
 
 func main() {
-	app := bootstrap.NewApp()
+	app, err := bootstrap.NewApp()
+	if err != nil {
+		log.Fatalf("initialize application: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	routes.Register(mux, app.Routes)

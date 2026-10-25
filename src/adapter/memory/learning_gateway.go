@@ -59,7 +59,10 @@ func (g *StubLearningAgentGateway) Respond(_ context.Context, req repository.Lea
 		confidenceDelta = 1
 		evidenceKind = "hint_request"
 	case domain.TutorModeDiagnostic:
-		kind = "diagnostic"
+		// Diagnostic is a tutoring mode, not a response kind. Keep the wire
+		// response inside the documented taxonomy while still recording the
+		// diagnostic evidence signal.
+		kind = "question"
 		body = "Let’s diagnose the starting point. Which description feels closest to your current understanding?"
 		nextAction = "Choose a confidence level"
 		confidenceDelta = 1
