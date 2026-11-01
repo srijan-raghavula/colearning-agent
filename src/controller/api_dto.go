@@ -85,7 +85,7 @@ type apiTurn struct {
 	Kind            string                  `json:"kind"`
 	Mode            domain.TutorMode        `json:"mode"`
 	Body            string                  `json:"body"`
-	Sources         []apiSourceRef          `json:"sources,omitempty"`
+	Sources         []apiSourceRef          `json:"sources"`
 	ConfidenceDelta int                     `json:"confidence_delta,omitempty"`
 	CreatedAt       time.Time               `json:"created_at"`
 }

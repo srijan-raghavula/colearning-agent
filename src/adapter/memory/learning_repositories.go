@@ -186,7 +186,7 @@ func (r *LearningSessionRepository) FindByID(_ context.Context, id string) (doma
 	return session, ok, nil
 }
 
-func (r *LearningSessionRepository) FindActive(_ context.Context, studentID, courseID string) (domain.LearningSession, bool, error) {
+func (r *LearningSessionRepository) FindActive(_ context.Context, studentID, courseID, conceptID string) (domain.LearningSession, bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var active domain.LearningSession
@@ -195,7 +195,10 @@ func (r *LearningSessionRepository) FindActive(_ context.Context, studentID, cou
 		if session.StudentID != studentID || session.CourseID != courseID || session.Status != domain.LearningSessionActive {
 			continue
 		}
-		if !found || session.LastActiveAt.After(active.LastActiveAt) {
+		if conceptID != "" && session.ConceptID != conceptID {
+			continue
+		}
+		if !found || session.LastActiveAt.After(active.LastActiveAt) || (session.LastActiveAt.Equal(active.LastActiveAt) && session.ID < active.ID) {
 			active = session
 			found = true
 		}

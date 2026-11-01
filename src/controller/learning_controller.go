@@ -1,11 +1,13 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -507,11 +509,64 @@ func materialsForConcept(materials []domain.LearningMaterial, conceptID string) 
 	return result
 }
 
+const maxJSONBodyBytes int64 = 1 << 20
+
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	contentType := r.Header.Get("Content-Type")
+	if strings.TrimSpace(contentType) == "" {
+		writeAPIError(w, http.StatusUnsupportedMediaType, errors.New("Content-Type must be application/json"))
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		writeAPIError(w, http.StatusUnsupportedMediaType, fmt.Errorf("invalid Content-Type: %w", err))
+		return false
+	}
+	if mediaType != "application/json" {
+		writeAPIError(w, http.StatusUnsupportedMediaType, errors.New("Content-Type must be application/json"))
+		return false
+	}
+	if r.Body == nil {
+		writeAPIError(w, http.StatusBadRequest, errors.New("request body must not be empty"))
+		return false
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeAPIError(w, http.StatusRequestEntityTooLarge, errors.New("request body exceeds the 1 MiB limit"))
+			return false
+		}
+		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("could not read request body: %w", err))
+		return false
+	}
+
+	trimmedBody := bytes.TrimSpace(body)
+	if len(trimmedBody) == 0 {
+		writeAPIError(w, http.StatusBadRequest, errors.New("request body must not be empty"))
+		return false
+	}
+	if bytes.Equal(trimmedBody, []byte("null")) {
+		writeAPIError(w, http.StatusBadRequest, errors.New("request body must contain a JSON object"))
+		return false
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("invalid JSON: %w", err))
+		return false
+	}
+
+	var trailingValue json.RawMessage
+	if err := decoder.Decode(&trailingValue); err != io.EOF {
+		if err == nil {
+			writeAPIError(w, http.StatusBadRequest, errors.New("request body must contain a single JSON value"))
+		} else {
+			writeAPIError(w, http.StatusBadRequest, fmt.Errorf("invalid JSON after first value: %w", err))
+		}
 		return false
 	}
 	return true

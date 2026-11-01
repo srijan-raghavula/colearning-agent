@@ -2,13 +2,31 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/srijan-raghavula/colearning-agent/src/adapter/memory"
 	"github.com/srijan-raghavula/colearning-agent/src/domain"
+	"github.com/srijan-raghavula/colearning-agent/src/repository"
 	"github.com/srijan-raghavula/colearning-agent/src/service"
 )
+
+type retryLearningGateway struct {
+	calls int
+}
+
+func (g *retryLearningGateway) Respond(context.Context, repository.LearningRequest) (repository.LearningResponse, error) {
+	g.calls++
+	if g.calls == 1 {
+		return repository.LearningResponse{}, errors.New("provider unavailable")
+	}
+	return repository.LearningResponse{
+		Kind:       "explanation",
+		Body:       "Let's try the idea another way.",
+		NextAction: "Explain the next step",
+	}, nil
+}
 
 func learningFixture() (StudentLearningPortal, TeacherLearningPortal) {
 	now := time.Now().UTC()
@@ -121,6 +139,66 @@ func TestContinuePersistsConversationAndProgress(t *testing.T) {
 	latest, err := student.LatestCheck(ctx, session.ID)
 	if err != nil || latest == nil || latest.ID != check.ID {
 		t.Fatalf("expected latest check to be persisted, latest=%#v err=%v", latest, err)
+	}
+}
+
+func TestContinueRetriesOnlyTheSameUnansweredStudentTurn(t *testing.T) {
+	student, _ := learningFixture()
+	gateway := &retryLearningGateway{}
+	student.agent = service.NewTutorAgent(gateway)
+	ctx := context.Background()
+	session, err := student.StartOrResume(ctx, StartLearningRequest{StudentID: "S-001", Mode: domain.TutorModeGuided})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	request := SendLearningTurnRequest{
+		StudentID: "S-001",
+		SessionID: session.ID,
+		Mode:      domain.TutorModeGuided,
+		Message:   "I will check by substitution.",
+	}
+	if _, err := student.Continue(ctx, request); err == nil {
+		t.Fatal("expected the first provider request to fail")
+	}
+	_, turns, err := student.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("session after provider failure: %v", err)
+	}
+	if len(turns) != 1 || turns[0].Role != domain.LearningTurnStudent || turns[0].Body != request.Message {
+		t.Fatalf("expected the unanswered student turn to remain persisted, got %#v", turns)
+	}
+
+	differentMessage := request
+	differentMessage.Message = "I want to try a different approach."
+	if _, err := student.Continue(ctx, differentMessage); err == nil {
+		t.Fatal("expected a different message to be rejected while the previous turn is unanswered")
+	}
+	differentMode := request
+	differentMode.Mode = domain.TutorModeSocratic
+	if _, err := student.Continue(ctx, differentMode); err == nil {
+		t.Fatal("expected a different mode to be rejected while the previous turn is unanswered")
+	}
+	if gateway.calls != 1 {
+		t.Fatalf("rejected retries must not call the provider, got %d calls", gateway.calls)
+	}
+
+	result, err := student.Continue(ctx, request)
+	if err != nil {
+		t.Fatalf("retry same message and mode: %v", err)
+	}
+	if result.Turn.Role != domain.LearningTurnTutor || result.Turn.Body == "" {
+		t.Fatalf("unexpected tutor response after retry: %#v", result.Turn)
+	}
+	if gateway.calls != 2 {
+		t.Fatalf("expected one failed call and one retry, got %d calls", gateway.calls)
+	}
+	_, turns, err = student.Session(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("session after successful retry: %v", err)
+	}
+	if len(turns) != 2 || turns[0].Role != domain.LearningTurnStudent || turns[1].Role != domain.LearningTurnTutor {
+		t.Fatalf("expected one student turn and one tutor turn after retry, got %#v", turns)
 	}
 }
 

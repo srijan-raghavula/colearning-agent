@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -15,9 +16,54 @@ import (
 	"github.com/srijan-raghavula/colearning-agent/src/service"
 )
 
-const defaultLearningStudentID = "S-001"
+const (
+	defaultLearningStudentID  = "S-001"
+	learningChangeHookTimeout = 5 * time.Second
+)
 
 var learningIDSequence atomic.Uint64
+
+// learningWorkflowCoordinator serializes only related student mutations that
+// span several in-memory repositories. Its registry mutex is held only while
+// acquiring or releasing a key; provider work is guarded by the per-key lock.
+// Durable database transaction and distributed idempotency semantics remain
+// intentionally outside this demo slice.
+type learningWorkflowCoordinator struct {
+	mu    sync.Mutex
+	locks map[string]*learningWorkflowLock
+}
+
+type learningWorkflowLock struct {
+	mu    sync.Mutex
+	users int
+}
+
+func newLearningWorkflowCoordinator() *learningWorkflowCoordinator {
+	return &learningWorkflowCoordinator{locks: make(map[string]*learningWorkflowLock)}
+}
+
+func (c *learningWorkflowCoordinator) lock(key string) func() {
+	c.mu.Lock()
+	entry := c.locks[key]
+	if entry == nil {
+		entry = &learningWorkflowLock{}
+		c.locks[key] = entry
+	}
+	entry.users++
+	c.mu.Unlock()
+
+	entry.mu.Lock()
+	return func() {
+		entry.mu.Unlock()
+
+		c.mu.Lock()
+		entry.users--
+		if entry.users == 0 {
+			delete(c.locks, key)
+		}
+		c.mu.Unlock()
+	}
+}
 
 type StartLearningRequest struct {
 	StudentID string           `json:"student_id,omitempty"`
@@ -55,14 +101,15 @@ type UpdateTutorPolicyRequest struct {
 // loop. The current slice deliberately keeps orchestration thin and delegates
 // the tutor provider contract to service.TutorAgent.
 type StudentLearningPortal struct {
-	content  repository.LearningContentRepository
-	sessions repository.LearningSessionRepository
-	progress repository.ConceptProgressRepository
-	evidence repository.LearningEvidenceRepository
-	checks   repository.UnderstandingCheckRepository
-	agent    *service.TutorAgent
-	checker  *service.UnderstandingCheckService
-	onChange func(context.Context)
+	content     repository.LearningContentRepository
+	sessions    repository.LearningSessionRepository
+	progress    repository.ConceptProgressRepository
+	evidence    repository.LearningEvidenceRepository
+	checks      repository.UnderstandingCheckRepository
+	agent       *service.TutorAgent
+	checker     *service.UnderstandingCheckService
+	coordinator *learningWorkflowCoordinator
+	onChange    func(context.Context)
 }
 
 // LearningChangeHook is invoked after a mutating learning workflow has fully
@@ -81,13 +128,14 @@ func NewStudentLearningPortal(
 	checker *service.UnderstandingCheckService,
 ) StudentLearningPortal {
 	return StudentLearningPortal{
-		content:  content,
-		sessions: sessions,
-		progress: progress,
-		evidence: evidence,
-		checks:   checks,
-		agent:    agent,
-		checker:  checker,
+		content:     content,
+		sessions:    sessions,
+		progress:    progress,
+		evidence:    evidence,
+		checks:      checks,
+		agent:       agent,
+		checker:     checker,
+		coordinator: newLearningWorkflowCoordinator(),
 	}
 }
 
@@ -99,10 +147,53 @@ func (p StudentLearningPortal) WithChangeHook(hook LearningChangeHook) StudentLe
 }
 
 func (p StudentLearningPortal) persistChange(ctx context.Context) {
-	if p.onChange == nil {
+	invokeLearningChangeHook(ctx, p.onChange)
+}
+
+func invokeLearningChangeHook(ctx context.Context, hook LearningChangeHook) {
+	if hook == nil {
 		return
 	}
-	p.onChange(ctx)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), learningChangeHookTimeout)
+	defer cancel()
+	hook(persistCtx)
+}
+
+func (p StudentLearningPortal) lockWorkflow(key string) func() {
+	if p.coordinator == nil {
+		return func() {}
+	}
+	return p.coordinator.lock(key)
+}
+
+func (p StudentLearningPortal) startWorkflowKey(ctx context.Context, req StartLearningRequest) (string, error) {
+	studentID := defaultLearningStudentIDValue(req.StudentID)
+	courseID := strings.TrimSpace(req.CourseID)
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID != "" {
+		session, found, err := p.sessions.FindByID(ctx, sessionID)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			courseID = strings.TrimSpace(session.CourseID)
+		}
+	}
+	if courseID == "" && sessionID == "" {
+		course, _, err := p.primaryCourse(ctx)
+		if err != nil {
+			return "", err
+		}
+		courseID = course.ID
+	}
+	return "start\x00" + studentID + "\x00" + courseID, nil
+}
+
+func sessionWorkflowKey(sessionID string) string {
+	return "session\x00" + strings.TrimSpace(sessionID)
 }
 
 func (p StudentLearningPortal) Dashboard(ctx context.Context, studentID string) (domain.StudentLearningDashboard, error) {
@@ -149,7 +240,7 @@ func (p StudentLearningPortal) Dashboard(ctx context.Context, studentID string) 
 		featuredProgress = newProgress(studentID, course.ID, featured.ID)
 	}
 
-	activeSession, hasSession, err := p.sessions.FindActive(ctx, studentID, course.ID)
+	activeSession, hasSession, err := p.sessions.FindActive(ctx, studentID, course.ID, "")
 	if err != nil {
 		return domain.StudentLearningDashboard{}, err
 	}
@@ -250,18 +341,69 @@ func (p StudentLearningPortal) publishedMaterials(ctx context.Context, courseID,
 }
 
 func (p StudentLearningPortal) StartOrResume(ctx context.Context, req StartLearningRequest) (domain.LearningSession, error) {
+	return p.startOrResumeCoordinated(ctx, req, true)
+}
+
+func (p StudentLearningPortal) startOrResumeCoordinated(ctx context.Context, req StartLearningRequest, reconcileMode bool) (domain.LearningSession, error) {
+	key, err := p.startWorkflowKey(ctx, req)
+	if err != nil {
+		return domain.LearningSession{}, err
+	}
+	unlockStart := p.lockWorkflow(key)
+	defer unlockStart()
+
+	// Resolve or create the session while holding the student/course start key.
+	// Existing-session reconciliation also takes that session's key before it
+	// re-reads and writes the record. Continue and CheckUnderstanding use the
+	// same session key, so a stale session copy cannot overwrite a concurrent
+	// mode or activity update. The fixed start -> session order avoids cycles.
+	session, err := p.startOrResume(ctx, req, false)
+	if err != nil || !reconcileMode {
+		return session, err
+	}
+
+	unlockSession := p.lockWorkflow(sessionWorkflowKey(session.ID))
+	defer unlockSession()
+
+	lockedReq := req
+	lockedReq.SessionID = session.ID
+	return p.startOrResume(ctx, lockedReq, true)
+}
+
+func (p StudentLearningPortal) startOrResume(ctx context.Context, req StartLearningRequest, reconcileMode bool) (domain.LearningSession, error) {
 	studentID := defaultLearningStudentIDValue(req.StudentID)
+	requestedCourseID := strings.TrimSpace(req.CourseID)
+	requestedConceptID := strings.TrimSpace(req.ConceptID)
+
+	if strings.TrimSpace(req.SessionID) != "" {
+		session, found, err := p.sessions.FindByID(ctx, strings.TrimSpace(req.SessionID))
+		if err != nil {
+			return domain.LearningSession{}, err
+		}
+		if !found || session.StudentID != studentID {
+			return domain.LearningSession{}, errors.New("learning session was not found for this student")
+		}
+		_, _, mode, err := p.validateLearningSession(ctx, session, studentID, requestedCourseID, requestedConceptID, req.Mode)
+		if err != nil {
+			return domain.LearningSession{}, err
+		}
+		if reconcileMode {
+			return p.reconcileLearningSessionMode(ctx, session, mode)
+		}
+		return session, nil
+	}
+
 	course, concepts, err := p.primaryCourse(ctx)
 	if err != nil {
 		return domain.LearningSession{}, err
 	}
-	if req.CourseID != "" && req.CourseID != course.ID {
-		selected, found, findErr := p.content.FindCourse(ctx, req.CourseID)
+	if requestedCourseID != "" && requestedCourseID != course.ID {
+		selected, found, findErr := p.content.FindCourse(ctx, requestedCourseID)
 		if findErr != nil {
 			return domain.LearningSession{}, findErr
 		}
 		if !found {
-			return domain.LearningSession{}, fmt.Errorf("course %q was not found", req.CourseID)
+			return domain.LearningSession{}, fmt.Errorf("course %q was not found", requestedCourseID)
 		}
 		course = selected
 		concepts, err = p.content.ListConcepts(ctx, course.ID)
@@ -269,30 +411,21 @@ func (p StudentLearningPortal) StartOrResume(ctx context.Context, req StartLearn
 			return domain.LearningSession{}, err
 		}
 	}
+	if len(concepts) == 0 {
+		return domain.LearningSession{}, errors.New("course has no learning concepts")
+	}
 
-	if req.SessionID != "" {
-		session, found, findErr := p.sessions.FindByID(ctx, req.SessionID)
+	conceptID := requestedConceptID
+	if conceptID == "" {
+		latest, found, findErr := p.sessions.FindActive(ctx, studentID, course.ID, "")
 		if findErr != nil {
 			return domain.LearningSession{}, findErr
 		}
-		if !found || session.StudentID != studentID {
-			return domain.LearningSession{}, errors.New("learning session was not found for this student")
-		}
-		return session, nil
-	}
-
-	active, found, err := p.sessions.FindActive(ctx, studentID, course.ID)
-	if err != nil {
-		return domain.LearningSession{}, err
-	}
-	if found && (req.ConceptID == "" || active.ConceptID == req.ConceptID) {
-		return active, nil
-	}
-
-	conceptID := req.ConceptID
-	if conceptID == "" {
 		if found {
-			conceptID = active.ConceptID
+			conceptID = strings.TrimSpace(latest.ConceptID)
+			if conceptID == "" {
+				return domain.LearningSession{}, errors.New("active learning session has no concept")
+			}
 		} else {
 			conceptID = concepts[0].ID
 		}
@@ -305,17 +438,25 @@ func (p StudentLearningPortal) StartOrResume(ctx context.Context, req StartLearn
 		return domain.LearningSession{}, fmt.Errorf("concept %q is not part of course %q", conceptID, course.ID)
 	}
 
-	mode := req.Mode
-	if mode == "" {
-		mode = course.TutorPolicy.DefaultMode
+	active, found, err := p.sessions.FindActive(ctx, studentID, course.ID, concept.ID)
+	if err != nil {
+		return domain.LearningSession{}, err
 	}
-	if !mode.IsValid() {
-		return domain.LearningSession{}, fmt.Errorf("unsupported tutor mode %q", mode)
-	}
-	if !course.TutorPolicy.AllowsMode(mode) {
-		return domain.LearningSession{}, fmt.Errorf("tutor mode %q is not enabled for this course", mode)
+	if found {
+		_, _, mode, err := p.validateLearningSession(ctx, active, studentID, course.ID, concept.ID, req.Mode)
+		if err != nil {
+			return domain.LearningSession{}, err
+		}
+		if reconcileMode {
+			return p.reconcileLearningSessionMode(ctx, active, mode)
+		}
+		return active, nil
 	}
 
+	mode, err := effectiveTutorMode(req.Mode, "", course.TutorPolicy)
+	if err != nil {
+		return domain.LearningSession{}, err
+	}
 	now := time.Now().UTC()
 	session := domain.LearningSession{
 		ID:           newLearningID("session"),
@@ -330,7 +471,90 @@ func (p StudentLearningPortal) StartOrResume(ctx context.Context, req StartLearn
 	if err := p.sessions.Save(ctx, session); err != nil {
 		return domain.LearningSession{}, err
 	}
+	p.persistChange(ctx)
 	return session, nil
+}
+
+func (p StudentLearningPortal) reconcileLearningSessionMode(ctx context.Context, session domain.LearningSession, mode domain.TutorMode) (domain.LearningSession, error) {
+	if session.Mode == mode {
+		return session, nil
+	}
+	session.Mode = mode
+	if err := p.sessions.Save(ctx, session); err != nil {
+		return domain.LearningSession{}, err
+	}
+	p.persistChange(ctx)
+	return session, nil
+}
+
+func (p StudentLearningPortal) validateLearningSession(
+	ctx context.Context,
+	session domain.LearningSession,
+	studentID, requestedCourseID, requestedConceptID string,
+	requestedMode domain.TutorMode,
+) (domain.LearningCourse, domain.LearningConcept, domain.TutorMode, error) {
+	if session.StudentID != studentID {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("learning session does not belong to this student")
+	}
+	if session.Status != domain.LearningSessionActive {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("learning session is not active")
+	}
+	if requestedCourseID != "" && session.CourseID != requestedCourseID {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("learning session does not belong to the requested course")
+	}
+	if requestedConceptID != "" && session.ConceptID != requestedConceptID {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("learning session does not belong to the requested concept")
+	}
+
+	course, found, err := p.content.FindCourse(ctx, session.CourseID)
+	if err != nil {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", err
+	}
+	if !found {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("course for learning session was not found")
+	}
+	concept, found, err := p.content.FindConcept(ctx, session.ConceptID)
+	if err != nil {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", err
+	}
+	if !found {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("concept for learning session was not found")
+	}
+	if concept.CourseID != course.ID {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("learning session concept does not belong to its course")
+	}
+	mode, err := effectiveTutorMode(requestedMode, session.Mode, course.TutorPolicy)
+	if err != nil {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", err
+	}
+	return course, concept, mode, nil
+}
+
+func effectiveTutorMode(requestedMode, sessionMode domain.TutorMode, policy domain.TutorPolicy) (domain.TutorMode, error) {
+	if requestedMode != "" {
+		if !requestedMode.IsValid() {
+			return "", fmt.Errorf("unsupported tutor mode %q", requestedMode)
+		}
+		if !policy.AllowsMode(requestedMode) {
+			return "", fmt.Errorf("tutor mode %q is not enabled for this course", requestedMode)
+		}
+		return requestedMode, nil
+	}
+
+	// A policy can change while a session is active. Omitted mode requests keep
+	// an allowed stored mode, but reconcile stale/invalid stored values to the
+	// course's current default instead of making the session unusable.
+	if sessionMode.IsValid() && policy.AllowsMode(sessionMode) {
+		return sessionMode, nil
+	}
+	mode := policy.DefaultMode
+	if !mode.IsValid() {
+		return "", fmt.Errorf("unsupported tutor mode %q", mode)
+	}
+	if !policy.AllowsMode(mode) {
+		return "", fmt.Errorf("tutor mode %q is not enabled for this course", mode)
+	}
+	return mode, nil
 }
 
 func (p StudentLearningPortal) Session(ctx context.Context, sessionID string) (domain.LearningSession, []domain.LearningTurn, error) {
@@ -366,9 +590,13 @@ func (p StudentLearningPortal) CheckUnderstanding(ctx context.Context, sessionID
 	if p.checker == nil {
 		return domain.UnderstandingCheck{}, errors.New("understanding check service is not configured")
 	}
-	if strings.TrimSpace(sessionID) == "" {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
 		return domain.UnderstandingCheck{}, errors.New("learning session is required")
 	}
+	unlock := p.lockWorkflow(sessionWorkflowKey(sessionID))
+	defer unlock()
+
 	studentID = defaultLearningStudentIDValue(studentID)
 	session, turns, err := p.Session(ctx, sessionID)
 	if err != nil {
@@ -376,6 +604,9 @@ func (p StudentLearningPortal) CheckUnderstanding(ctx context.Context, sessionID
 	}
 	if session.StudentID != studentID {
 		return domain.UnderstandingCheck{}, errors.New("learning session does not belong to this student")
+	}
+	if session.Status != domain.LearningSessionActive {
+		return domain.UnderstandingCheck{}, errors.New("learning session is not active")
 	}
 	var latest domain.LearningTurn
 	foundStudentTurn := false
@@ -408,6 +639,9 @@ func (p StudentLearningPortal) CheckUnderstanding(ctx context.Context, sessionID
 	}
 	if !found {
 		return domain.UnderstandingCheck{}, errors.New("concept for learning session was not found")
+	}
+	if concept.CourseID != course.ID {
+		return domain.UnderstandingCheck{}, errors.New("learning session concept does not belong to its course")
 	}
 	objective, err := p.objectiveFor(ctx, course.ID, concept.ID)
 	if err != nil {
@@ -493,54 +727,59 @@ func (p StudentLearningPortal) Continue(ctx context.Context, req SendLearningTur
 	if p.agent == nil {
 		return domain.LearningTurnResult{}, errors.New("tutor agent is not configured")
 	}
-	if strings.TrimSpace(req.Message) == "" {
+	message := strings.TrimSpace(req.Message)
+	if message == "" {
 		return domain.LearningTurnResult{}, errors.New("a learning message is required")
 	}
 
-	start := StartLearningRequest{
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" {
+		started, err := p.startOrResumeCoordinated(ctx, StartLearningRequest{
+			StudentID: req.StudentID,
+			Mode:      req.Mode,
+		}, false)
+		if err != nil {
+			return domain.LearningTurnResult{}, err
+		}
+		sessionID = started.ID
+	}
+
+	// Turns and checks for one session share a key. Continue deliberately calls
+	// the non-coordinating helper while holding it, avoiding recursive locking.
+	unlock := p.lockWorkflow(sessionWorkflowKey(sessionID))
+	defer unlock()
+
+	session, err := p.startOrResume(ctx, StartLearningRequest{
 		StudentID: req.StudentID,
-		SessionID: req.SessionID,
+		SessionID: sessionID,
 		Mode:      req.Mode,
-	}
-	session, err := p.StartOrResume(ctx, start)
+	}, false)
 	if err != nil {
 		return domain.LearningTurnResult{}, err
 	}
-	if session.StudentID != defaultLearningStudentIDValue(req.StudentID) {
-		return domain.LearningTurnResult{}, errors.New("learning session does not belong to this student")
-	}
-	if req.Mode == "" {
-		req.Mode = session.Mode
-	}
-
-	now := time.Now().UTC()
-	studentTurn := domain.LearningTurn{
-		ID:        newLearningID("turn"),
-		SessionID: session.ID,
-		Role:      domain.LearningTurnStudent,
-		Kind:      "student_message",
-		Mode:      req.Mode,
-		Body:      strings.TrimSpace(req.Message),
-		CreatedAt: now,
-	}
-	if err := p.sessions.AppendTurn(ctx, studentTurn); err != nil {
+	studentID := defaultLearningStudentIDValue(req.StudentID)
+	course, concept, mode, err := p.validateLearningSession(ctx, session, studentID, "", "", req.Mode)
+	if err != nil {
 		return domain.LearningTurnResult{}, err
 	}
 
-	course, found, err := p.content.FindCourse(ctx, session.CourseID)
+	turns, err := p.sessions.ListTurns(ctx, session.ID)
 	if err != nil {
 		return domain.LearningTurnResult{}, err
 	}
-	if !found {
-		return domain.LearningTurnResult{}, errors.New("course for learning session was not found")
+	var studentTurn domain.LearningTurn
+	reuseStudentTurn := false
+	if len(turns) > 0 {
+		latest := turns[len(turns)-1]
+		if latest.Role == domain.LearningTurnStudent {
+			if latest.Body != message || latest.Mode != mode {
+				return domain.LearningTurnResult{}, errors.New("the previous student turn is still awaiting a tutor response; retry the same message and mode")
+			}
+			studentTurn = latest
+			reuseStudentTurn = true
+		}
 	}
-	concept, found, err := p.content.FindConcept(ctx, session.ConceptID)
-	if err != nil {
-		return domain.LearningTurnResult{}, err
-	}
-	if !found {
-		return domain.LearningTurnResult{}, errors.New("concept for learning session was not found")
-	}
+
 	objective, err := p.objectiveFor(ctx, course.ID, concept.ID)
 	if err != nil {
 		return domain.LearningTurnResult{}, err
@@ -562,26 +801,50 @@ func (p StudentLearningPortal) Continue(ctx context.Context, req SendLearningTur
 	if !found {
 		progressRecord = newProgress(session.StudentID, course.ID, concept.ID)
 	}
-	turns, err := p.sessions.ListTurns(ctx, session.ID)
-	if err != nil {
-		return domain.LearningTurnResult{}, err
-	}
-	if len(turns) > 8 {
-		turns = turns[len(turns)-8:]
+
+	if !reuseStudentTurn {
+		studentTurn = domain.LearningTurn{
+			ID:        newLearningID("turn"),
+			SessionID: session.ID,
+			Role:      domain.LearningTurnStudent,
+			Kind:      "student_message",
+			Mode:      mode,
+			Body:      message,
+			CreatedAt: time.Now().UTC(),
+		}
+		if err := p.sessions.AppendTurn(ctx, studentTurn); err != nil {
+			return domain.LearningTurnResult{}, err
+		}
+		turns = append(turns, studentTurn)
 	}
 
+	// Commit session activity and the effective mode with the retained student
+	// turn, then checkpoint the mutation before crossing the provider seam.
+	session.Mode = mode
+	if studentTurn.CreatedAt.After(session.LastActiveAt) {
+		session.LastActiveAt = studentTurn.CreatedAt
+	}
+	if err := p.sessions.Save(ctx, session); err != nil {
+		return domain.LearningTurnResult{}, err
+	}
+	p.persistChange(ctx)
+
+	recentTurns := turns
+	if len(recentTurns) > 8 {
+		recentTurns = recentTurns[len(recentTurns)-8:]
+	}
 	response, err := p.agent.Respond(ctx, repository.LearningRequest{
 		StudentID:   session.StudentID,
 		CourseID:    course.ID,
 		ConceptID:   concept.ID,
 		SessionID:   session.ID,
-		Mode:        req.Mode,
-		Message:     req.Message,
+		Mode:        mode,
+		Message:     message,
 		CourseTitle: course.Title,
 		Concept:     concept,
 		Objective:   objective,
 		Materials:   materials,
-		RecentTurns: turns,
+		RecentTurns: recentTurns,
 		Progress:    progressRecord,
 		Policy:      course.TutorPolicy,
 	})
@@ -594,7 +857,7 @@ func (p StudentLearningPortal) Continue(ctx context.Context, req SendLearningTur
 		SessionID:       session.ID,
 		Role:            domain.LearningTurnTutor,
 		Kind:            response.Kind,
-		Mode:            req.Mode,
+		Mode:            mode,
 		Body:            response.Body,
 		Sources:         response.Sources,
 		ConfidenceDelta: response.ConfidenceDelta,
@@ -747,10 +1010,7 @@ func (p TeacherLearningPortal) WithChangeHook(hook LearningChangeHook) TeacherLe
 }
 
 func (p TeacherLearningPortal) persistChange(ctx context.Context) {
-	if p.onChange == nil {
-		return
-	}
-	p.onChange(ctx)
+	invokeLearningChangeHook(ctx, p.onChange)
 }
 
 func (p TeacherLearningPortal) Dashboard(ctx context.Context) (domain.TeacherLearningDashboard, error) {

@@ -15,7 +15,7 @@ func LoadLearningStore() LearningStore {
 	switch path {
 	case "":
 		return LearningStore{Enabled: true, Path: "data/learning-state.json"}
-	case "off", "disabled", "-":
+	case "off":
 		return LearningStore{Enabled: false}
 	default:
 		return LearningStore{Enabled: true, Path: path}
