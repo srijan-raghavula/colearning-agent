@@ -6,8 +6,9 @@ type StudentSubmissionRecord struct {
 }
 
 type StudentDashboard struct {
-	StudentID string
-	Records   []StudentSubmissionRecord
+	StudentID   string
+	StudentName string
+	Records     []StudentSubmissionRecord
 }
 
 type SubjectSummary struct {

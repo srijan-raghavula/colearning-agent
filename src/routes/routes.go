@@ -3,7 +3,9 @@ package routes
 import (
 	"net/http"
 
+	"github.com/srijan-raghavula/colearning-agent/src/auth"
 	"github.com/srijan-raghavula/colearning-agent/src/controller"
+	"github.com/srijan-raghavula/colearning-agent/src/view"
 )
 
 type Dependencies struct {
@@ -11,23 +13,37 @@ type Dependencies struct {
 	Student  controller.StudentController
 	Faculty  controller.FacultyController
 	Learning controller.LearningController
+	Renderer *view.Renderer
+	Accounts auth.UserStore
 }
 
 func Register(mux *http.ServeMux, deps Dependencies) {
+	// Basic health and static assets
 	mux.HandleFunc("/healthz", deps.Health.Handle)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("src/templates"))))
 
-	// Product surfaces. The demo role is carried by a query parameter or
-	// X-Role header until a real identity provider is introduced.
+	// Product landing page
 	mux.HandleFunc("GET /{$}", deps.Learning.LandingPage)
+
+	// Authentication routes (login demo, teacher demo, etc.)
+	authCtrl := controller.NewAuthController(deps.Renderer, deps.Accounts)
+	RegisterAuth(mux, authCtrl)
+	// Signup endpoint (uses controller logic)
+	mux.HandleFunc("/api/auth/signup", authCtrl.Signup)
+
+	mux.HandleFunc("GET /login", authCtrl.LoginPage)
+	mux.HandleFunc("GET /signup", authCtrl.SignupPage)
+	mux.HandleFunc("GET /logout", authCtrl.Logout)
+	mux.HandleFunc("GET /profile", authenticated(authCtrl.ProfilePage))
+
+	// Student routes
 	mux.HandleFunc("/student", roleRequired("student", deps.Learning.StudentPage))
 	mux.HandleFunc("/student/workspace", roleRequired("student", deps.Learning.StudentWorkspace))
 	mux.HandleFunc("/student/session", roleRequired("student", deps.Learning.StartStudentSession))
 	mux.HandleFunc("/student/turn", roleRequired("student", deps.Learning.SendStudentTurn))
 	mux.HandleFunc("/student/check", roleRequired("student", deps.Learning.CheckStudentUnderstanding))
 
-	// Teacher is the canonical product route. /faculty remains an alias for
-	// compatibility with the original assessment portal.
+	// Teacher / faculty routes
 	mux.HandleFunc("/teacher", teacherRoleRequired(deps.Learning.TeacherPage))
 	mux.HandleFunc("/teacher/content", teacherRoleRequired(deps.Learning.TeacherContent))
 	mux.HandleFunc("/teacher/materials", teacherRoleRequired(deps.Learning.PublishMaterial))
@@ -37,8 +53,7 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 	mux.HandleFunc("/faculty/materials", teacherRoleRequired(deps.Learning.PublishMaterial))
 	mux.HandleFunc("/faculty/tutor-policy", teacherRoleRequired(deps.Learning.UpdateTutorPolicy))
 
-	// Versioned JSON API. The HTML portal and API intentionally share the same
-	// use cases so the UI cannot accidentally grow a second business path.
+	// Versioned JSON API
 	handleAPI(mux, http.MethodGet, "/api/v1/student/dashboard", apiRoleRequired("student", deps.Learning.StudentDashboardJSON))
 	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions", apiRoleRequired("student", deps.Learning.StartStudentSessionJSON))
 	handleAPI(mux, http.MethodGet, "/api/v1/student/sessions/{session_id}", apiRoleRequired("student", deps.Learning.StudentSessionJSON))
@@ -48,16 +63,13 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 	handleAPI(mux, http.MethodPost, "/api/v1/teacher/materials", apiTeacherRoleRequired(deps.Learning.PublishMaterialJSON))
 	handleAPI(mux, http.MethodPut, "/api/v1/teacher/courses/{course_id}/tutor-policy", apiTeacherRoleRequired(deps.Learning.UpdateTutorPolicyJSON))
 
-	// Keep API routing errors inside the v1 JSON contract. Known API paths have
-	// method fallbacks installed by handleAPI; this subtree fallback handles
-	// paths that are not part of the contract.
+	// Fallback for unknown API routes
 	mux.HandleFunc("/api/v1", apiNotFound)
 	mux.HandleFunc("/api/v1/", apiNotFound)
 
-	// Legacy assessment endpoints remain available while the co-learning
-	// surface is proven, but they are no longer linked from the product UI.
+	// Legacy assessment endpoints (not linked from UI)
 	mux.HandleFunc("/student/submissions", roleRequired("student", deps.Student.SubmissionsPartial))
 	mux.HandleFunc("/student/submit", roleRequired("student", deps.Student.Submit))
-	mux.HandleFunc("/faculty/summary", roleRequired("faculty", deps.Faculty.SummaryPartial))
-	mux.HandleFunc("/faculty/missing", roleRequired("faculty", deps.Faculty.MissingPartial))
+	mux.HandleFunc("/faculty/summary", teacherRoleRequired(deps.Faculty.SummaryPartial))
+	mux.HandleFunc("/faculty/missing", teacherRoleRequired(deps.Faculty.MissingPartial))
 }

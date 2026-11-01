@@ -2,16 +2,23 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/srijan-raghavula/colearning-agent/src/adapter/memory"
 	"github.com/srijan-raghavula/colearning-agent/src/adapter/persist"
+	"github.com/srijan-raghavula/colearning-agent/src/adapter/sqlite"
+	"github.com/srijan-raghavula/colearning-agent/src/agentic"
+	"github.com/srijan-raghavula/colearning-agent/src/auth"
 	"github.com/srijan-raghavula/colearning-agent/src/config"
 	"github.com/srijan-raghavula/colearning-agent/src/controller"
 	"github.com/srijan-raghavula/colearning-agent/src/domain"
+	"github.com/srijan-raghavula/colearning-agent/src/repository"
 	"github.com/srijan-raghavula/colearning-agent/src/routes"
 	"github.com/srijan-raghavula/colearning-agent/src/service"
 	"github.com/srijan-raghavula/colearning-agent/src/usecase"
@@ -21,12 +28,34 @@ import (
 type App struct {
 	Config config.HTTP
 	Routes routes.Dependencies
+	Close  func() error
 	// Persist flushes the durable learning snapshot on shutdown; nil when the
 	// durable store is disabled.
 	Persist func(ctx context.Context)
 }
 
 func NewApp() (App, error) {
+	var sqlRepo *sqlite.SQLiteRepo
+	dbPath := os.Getenv("COLEARN_DB_PATH")
+	if dbPath == "" {
+		dbPath = "data/colearning.db"
+	}
+	db, err := sqlite.OpenDB(dbPath)
+	if err != nil {
+		return App{}, fmt.Errorf("open application database: %w", err)
+	} else if err := sqlite.Migrate(db); err != nil {
+		_ = db.Close()
+		return App{}, fmt.Errorf("migrate application database: %w", err)
+	} else {
+		log.Printf("sqlite database at %s ready", dbPath)
+	}
+	dbTransferred := false
+	defer func() {
+		if !dbTransferred {
+			_ = db.Close()
+		}
+	}()
+
 	httpConfig := config.LoadHTTP()
 
 	now := time.Now().UTC()
@@ -114,11 +143,131 @@ func NewApp() (App, error) {
 		{ID: "evidence-3", SessionID: "session-s002-graph", TurnID: "turn-s002-1", StudentID: "S-002", CourseID: course.ID, ConceptID: "graphing-equations", Kind: "diagnostic_signal", Note: "Slope and intercept are still mixed together.", ObservedAt: now.Add(-30 * time.Minute)},
 	}
 
-	contentRepo := memory.NewLearningContentRepository([]domain.LearningCourse{course}, concepts, objectives, materials)
-	sessionRepo := memory.NewLearningSessionRepository(sessions, turns)
-	progressRepo := memory.NewConceptProgressRepository(progress)
-	evidenceRepo := memory.NewLearningEvidenceRepository(evidence)
-	checkRepo := memory.NewUnderstandingCheckRepository(nil)
+	memContent := memory.NewLearningContentRepository([]domain.LearningCourse{course}, concepts, objectives, materials)
+	memSession := memory.NewLearningSessionRepository(sessions, turns)
+	memProgress := memory.NewConceptProgressRepository(progress)
+	memEvidence := memory.NewLearningEvidenceRepository(evidence)
+	memCheck := memory.NewUnderstandingCheckRepository(nil)
+
+	var contentRepo repository.LearningContentRepository = memContent
+	var sessionRepo repository.LearningSessionRepository = memSession
+	var progressRepo repository.ConceptProgressRepository = memProgress
+	var evidenceRepo repository.LearningEvidenceRepository = memEvidence
+	var checkRepo repository.UnderstandingCheckRepository = memCheck
+
+	// SQLite persists accounts, course content, and learning sessions/turns.
+	if db != nil {
+		sqlRepo = sqlite.NewRepo(db)
+		contentRepo = sqlRepo
+		sessionRepo = &sqlite.SessionRepo{SQLiteRepo: sqlRepo}
+		demoAccounts := os.Getenv("COLEARN_DEMO_ACCOUNTS") != "false"
+		studentPassword, passErr := seedPassword("student123", demoAccounts)
+		if passErr != nil {
+			_ = db.Close()
+			return App{}, fmt.Errorf("prepare student seed password: %w", passErr)
+		}
+		teacherPassword, passErr := seedPassword("teacher123", demoAccounts)
+		if passErr != nil {
+			_ = db.Close()
+			return App{}, fmt.Errorf("prepare teacher seed password: %w", passErr)
+		}
+		studentHash, hashErr := auth.HashPassword(studentPassword)
+		if hashErr != nil {
+			return App{}, fmt.Errorf("prepare demo student account: %w", hashErr)
+		}
+		teacherHash, hashErr := auth.HashPassword(teacherPassword)
+		if hashErr != nil {
+			return App{}, fmt.Errorf("prepare demo teacher account: %w", hashErr)
+		}
+		if err := sqlRepo.UserCreate(context.Background(), "S-001", "student@demo.edu", studentHash, "student", "Alex Morgan"); err != nil {
+			return App{}, fmt.Errorf("seed demo student account: %w", err)
+		}
+		if err := sqlRepo.UserCreate(context.Background(), "T-001", "teacher@demo.edu", teacherHash, "teacher", "Maya Chen"); err != nil {
+			return App{}, fmt.Errorf("seed demo teacher account: %w", err)
+		}
+		secondaryPassword, passErr := seedPassword("", false)
+		if passErr != nil {
+			return App{}, fmt.Errorf("prepare learner profile seed: %w", passErr)
+		}
+		secondaryHash, hashErr := auth.HashPassword(secondaryPassword)
+		if hashErr != nil {
+			return App{}, fmt.Errorf("prepare learner profile: %w", hashErr)
+		}
+		if err := sqlRepo.UserCreate(context.Background(), "S-002", "jordan.lee@demo.edu", secondaryHash, "student", "Jordan Lee"); err != nil {
+			return App{}, fmt.Errorf("seed learner profile: %w", err)
+		}
+		// Seed defaults only when absent so teacher edits survive restarts.
+		if _, found, findErr := sqlRepo.FindCourse(context.Background(), course.ID); findErr != nil {
+			_ = db.Close()
+			return App{}, fmt.Errorf("read seed course: %w", findErr)
+		} else if !found {
+			if err := sqlRepo.SaveCourse(context.Background(), course); err != nil {
+				_ = db.Close()
+				return App{}, fmt.Errorf("seed course: %w", err)
+			}
+		}
+		for _, c := range concepts {
+			if _, found, findErr := sqlRepo.FindConcept(context.Background(), c.ID); findErr != nil {
+				_ = db.Close()
+				return App{}, fmt.Errorf("read seed concept %q: %w", c.ID, findErr)
+			} else if !found {
+				if err := sqlRepo.SaveConcept(context.Background(), c); err != nil {
+					_ = db.Close()
+					return App{}, fmt.Errorf("seed concept %q: %w", c.ID, err)
+				}
+			}
+		}
+		for _, o := range objectives {
+			existing, findErr := sqlRepo.ListObjectives(context.Background(), o.CourseID, o.ConceptID)
+			if findErr != nil {
+				_ = db.Close()
+				return App{}, fmt.Errorf("read seed objective %q: %w", o.ID, findErr)
+			}
+			if len(existing) == 0 {
+				if err := sqlRepo.SaveObjective(context.Background(), o); err != nil {
+					_ = db.Close()
+					return App{}, fmt.Errorf("seed objective %q: %w", o.ID, err)
+				}
+			}
+		}
+		for _, m := range materials {
+			if _, found, findErr := sqlRepo.FindMaterial(context.Background(), m.ID); findErr != nil {
+				_ = db.Close()
+				return App{}, fmt.Errorf("read seed material %q: %w", m.ID, findErr)
+			} else if !found {
+				if err := sqlRepo.SaveMaterial(context.Background(), m); err != nil {
+					_ = db.Close()
+					return App{}, fmt.Errorf("seed material %q: %w", m.ID, err)
+				}
+			}
+		}
+		for _, session := range sessions {
+			if _, found, findErr := sqlRepo.FindByID(context.Background(), session.ID); findErr != nil {
+				_ = db.Close()
+				return App{}, fmt.Errorf("read seed session %q: %w", session.ID, findErr)
+			} else if !found {
+				if err := sqlRepo.Save(context.Background(), session); err != nil {
+					_ = db.Close()
+					return App{}, fmt.Errorf("seed session %q: %w", session.ID, err)
+				}
+			}
+			storedTurns, findErr := sqlRepo.ListTurns(context.Background(), session.ID)
+			if findErr != nil {
+				_ = db.Close()
+				return App{}, fmt.Errorf("read seed turns for session %q: %w", session.ID, findErr)
+			}
+			if len(storedTurns) == 0 {
+				for _, turn := range turns {
+					if turn.SessionID == session.ID {
+						if err := sqlRepo.AppendTurn(context.Background(), turn); err != nil {
+							_ = db.Close()
+							return App{}, fmt.Errorf("seed turn %q: %w", turn.ID, err)
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// ── Durable learning state ──────────────────────────────────────────────
 	// A file-backed snapshot of the repositories survives restarts. First boot
@@ -128,7 +277,7 @@ func NewApp() (App, error) {
 	var learningPersistHook usecase.LearningChangeHook
 	var appPersist func(context.Context)
 	if learningStoreConfig.Enabled {
-		snapshotStore := persist.NewLearningStore(learningStoreConfig.Path, contentRepo, sessionRepo, progressRepo, evidenceRepo, checkRepo)
+		snapshotStore := persist.NewLearningStore(learningStoreConfig.Path, memContent, memSession, memProgress, memEvidence, memCheck)
 		loaded, loadErr := snapshotStore.Load(context.Background())
 		if loadErr != nil {
 			var corrupt *persist.ErrCorruptSnapshot
@@ -154,8 +303,17 @@ func NewApp() (App, error) {
 		appPersist = learningPersistHook
 	}
 
-	learningAgent := service.NewTutorAgent(memory.NewStubLearningAgentGateway())
-	understandingChecker := service.NewUnderstandingCheckService(memory.NewStubFormativeCheckGateway())
+	var agentLogger agentic.ExecutionLogger
+	if sqlRepo != nil {
+		agentLogger = sqlRepo
+	}
+	learningGateway := agentic.Gateway{
+		Agent:  &agentic.TutorAgent{Gateway: memory.NewStubLearningAgentGateway()},
+		Logger: agentLogger,
+	}
+	learningAgent := service.NewTutorAgent(learningGateway)
+	formativeGateway := agentic.FormativeChecker{Gateway: memory.NewStubFormativeCheckGateway(), Logger: agentLogger}
+	understandingChecker := service.NewUnderstandingCheckService(formativeGateway)
 
 	studentPortal := usecase.NewStudentPortal(submissionRepo, evaluationRepo)
 	facultyPortal := usecase.NewFacultyPortal(submissionRepo, evaluationRepo)
@@ -166,15 +324,40 @@ func NewApp() (App, error) {
 	if err != nil {
 		return App{}, fmt.Errorf("load application templates: %w", err)
 	}
+	var accounts auth.UserStore
+	if sqlRepo != nil {
+		accounts = sqlRepo
+	}
 
-	return App{
+	app := App{
 		Config: httpConfig,
 		Routes: routes.Dependencies{
 			Health:   controller.NewHealthController(),
 			Student:  controller.NewStudentController(studentPortal, renderer),
 			Faculty:  controller.NewFacultyController(facultyPortal, renderer),
-			Learning: controller.NewLearningController(studentLearningPortal, teacherLearningPortal, renderer),
+			Learning: controller.NewLearningController(studentLearningPortal, teacherLearningPortal, renderer).WithAccountLookup(sqlRepo),
+			Renderer: renderer,
+			Accounts: accounts,
 		},
 		Persist: appPersist,
-	}, nil
+		Close: func() error {
+			if db != nil {
+				return db.Close()
+			}
+			return nil
+		},
+	}
+	dbTransferred = true
+	return app, nil
+}
+
+func seedPassword(demoPassword string, allowDemo bool) (string, error) {
+	if allowDemo {
+		return demoPassword, nil
+	}
+	var randomPassword [32]byte
+	if _, err := rand.Read(randomPassword[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(randomPassword[:]), nil
 }

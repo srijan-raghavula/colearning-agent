@@ -26,16 +26,17 @@ The new learning path is parallel to the legacy assessment path. It does not ove
 
 ```mermaid
 flowchart LR
-    Student[Student browser] -->|HTML / HTMX| StudentAPI[Student routes and controller]
+    Student[Student browser] -->|HTML and JSON| StudentAPI[Student routes and controller]
     Teacher[Teacher browser] -->|HTML| TeacherAPI[Teacher routes and controller]
     StudentAPI --> StudentUC[StudentLearningPortal use case]
+    StudentAPI --> Identity[Signed account identity]
     TeacherAPI --> TeacherUC[TeacherLearningPortal use case]
     StudentUC --> Content[(Learning content repository)]
     StudentUC --> Sessions[(Session and turn repository)]
     StudentUC --> Progress[(Concept progress repository)]
     StudentUC --> Evidence[(Learning evidence repository)]
     StudentUC --> Agent[TutorAgent service]
-    Agent --> Gateway[LearningAgentGateway]
+    Agent --> Gateway[Agentic orchestration and LearningAgentGateway]
     Gateway --> Provider[Stub or external LLM adapter]
     TeacherUC --> Content
     TeacherUC --> Progress
@@ -82,7 +83,7 @@ sequenceDiagram
     UseCase->>Evidence: Store formative evidence
     UseCase->>Progress: Update confidence/status/next action
     UseCase-->>Controller: Turn result and updated read model
-    Controller-->>Browser: HTMX partial or JSON response
+    Controller-->>Browser: Full page redirect or JSON response
 ```
 
 ## Teacher content loop
@@ -189,13 +190,14 @@ Current learning ports:
 
 Current adapters:
 
-- thread-safe in-memory repositories
+- SQLite accounts, learning content, sessions/turns, and agent execution records
+- durable snapshot-backed progress, evidence, and check repositories
+- thread-safe in-memory legacy assessment repositories
 - deterministic `StubLearningAgentGateway`
 - deterministic `StubFormativeCheckGateway`
 - server-rendered templates with a shared CSS token system
-- legacy in-memory submission/evaluation repositories behind compatibility routes
 
-Production follow-up adapters should provide durable persistence, authenticated actors, source fetching/normalization, and a real model provider. Source content must be treated as untrusted input and cannot override tutor instructions.
+Production follow-up includes course enrollment and teacher ownership checks, rate limits, source fetching/normalization, and a real model provider. Source content must be treated as untrusted input and cannot override tutor instructions.
 
 ## HTTP surface
 
@@ -204,16 +206,18 @@ Production follow-up adapters should provide durable persistence, authenticated 
 | Route | Purpose |
 |---|---|
 | `GET /` | Product landing and role entry point |
+| `GET /login`, `GET /signup` | Account sign-in and registration |
+| `GET /profile`, `GET /logout` | Current account profile and sign-out |
 | `GET /student` | Student learning dashboard |
 | `GET /student/workspace` | Resumable tutor conversation |
 | `POST /student/session` | Start or resume a session |
-| `POST /student/turn` | Submit a student turn; supports HTMX partial response |
+| `POST /student/turn` | Submit a student turn and redirect back to the session |
 | `GET /teacher` | Teacher class dashboard |
 | `GET /teacher/content` | Content studio and tutor policy controls |
 | `POST /teacher/materials` | Publish a learning note |
 | `POST /teacher/tutor-policy` | Update allowed tutor modes and source policy |
 
-The `/faculty` routes remain as compatibility aliases; the product language and canonical path are **teacher**. The API accepts `role=teacher` or `role=faculty` for this transition.
+The `/faculty` routes remain as compatibility aliases; the product language and canonical path are **teacher**. Route roles come from the signed-in account, never query parameters.
 
 ### JSON API
 
@@ -251,7 +255,7 @@ The UI is intentionally data-oriented and polished without pretending that the c
 - configurable tutor mode selector
 - source chips on tutor responses
 - clear empty state before the first turn
-- HTMX partial refresh for new turns
+- Full-page post/redirect/get for turns and understanding checks
 
 ### Teacher dashboard
 
@@ -305,6 +309,6 @@ This separation is intentional. It lets the new UI and API contract stabilize be
 4. Add a real LLM adapter and citation verification behind `LearningAgentGateway`.
 5. Add provider/versioned rubric policy to the optional understanding check.
 6. Add authorization tests for every teacher, student, and session endpoint.
-7. Add browser-level tests for the shared dashboard shell and HTMX turn flow.
+7. Add browser-level tests for the account flow, responsive dashboard shell, and post/redirect/get conversation flow.
 
 The problem statement remains unchanged as the original requirement record. Product interpretation and implementation decisions live in this document and the API/UI documentation.

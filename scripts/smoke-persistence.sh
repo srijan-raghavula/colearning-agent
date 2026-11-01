@@ -8,9 +8,11 @@ STORE_DIR=$(mktemp -d /tmp/opencode/learning-smoke.XXXXXX)
 trap 'fuser -k "${PORT}"/tcp 2>/dev/null || true; rm -rf "$STORE_DIR"' EXIT
 
 BASE="http://localhost:${PORT}"
+COOKIE_JAR="$STORE_DIR/cookies.txt"
 
 boot() {
-  LEARNING_STORE_PATH="$STORE_DIR/learning-state.json" PORT="$PORT" \
+  COLEARN_DB_PATH="$STORE_DIR/colearning.db" \
+    LEARNING_STORE_PATH="$STORE_DIR/learning-state.json" PORT="$PORT" \
     nohup go run ./src/cmd/api > "$1" 2>&1 &
   for _ in $(seq 1 40); do
     sleep 0.25
@@ -19,11 +21,21 @@ boot() {
   echo "server failed to start"; cat "$1"; exit 1
 }
 
+login() {
+  curl -sf -c "$COOKIE_JAR" -b "$COOKIE_JAR" -X POST \
+    "$BASE/api/auth/login" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -H 'Accept: application/json' \
+    --data-urlencode 'email=student@demo.edu' \
+    --data-urlencode 'password=student123' > /dev/null
+}
+
 echo "▶ boot 1 (seed + learn turn)"
 boot "$STORE_DIR/boot1.log"
+login
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   "$BASE/api/v1/student/sessions/session-s001-linear/turns" \
-  -H 'Content-Type: application/json' -H 'X-Role: student' \
+  -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
   -d '{"message":"Smoke check: I will verify by substituting the answer back."}')
 [[ "$code" == "200" ]] || { echo "turn POST failed (HTTP $code)"; exit 1; }
 fuser -k "${PORT}"/tcp 2>/dev/null || true
@@ -31,10 +43,11 @@ sleep 1
 
 echo "▶ boot 2 (restore from snapshot)"
 boot "$STORE_DIR/boot2.log"
+login
 grep -q "restored learning state" "$STORE_DIR/boot2.log" \
   || { echo "server did not log a successful restore"; cat "$STORE_DIR/boot2.log"; exit 1; }
 
-count=$(curl -s "$BASE/api/v1/student/dashboard" -H 'X-Role: student' | \
+count=$(curl -s "$BASE/api/v1/student/dashboard" -b "$COOKIE_JAR" | \
   python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("turns") or []))')
 echo "▶ dashboard turns after restore: $count"
 [[ "$count" -ge 4 ]] || { echo "expected ≥4 turns after restore (seeds + smoke turn), got $count"; exit 1; }

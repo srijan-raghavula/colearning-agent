@@ -28,7 +28,7 @@ build: ## Build the API binary into bin/
 	$(GO) build -o $(BINARY) ./src/cmd/api
 
 .PHONY: run
-run: ## Start the dev server (Ctrl+C for graceful shutdown + snapshot flush)
+run: ## Start the dev server (Ctrl+C triggers graceful shutdown + DB flush)
 	LEARNING_STORE_PATH=$(LEARNING_STORE_PATH) $(GO) run ./src/cmd/api
 
 # ── Quality ─────────────────────────────────────────────────────────────────

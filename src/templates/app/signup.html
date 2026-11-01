@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create account · CoLearn</title>
+  <link rel="stylesheet" href="/static/assets/app.css">
+  <script src="/static/assets/auth.js" defer></script>
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="card card-pad auth-card" aria-labelledby="auth-title">
+      <a href="/" class="auth-brand"><span class="brand-mark">C</span><span class="brand-name">CoLearn</span></a>
+      <p class="eyebrow auth-eyebrow">Get started</p>
+      <h1 id="auth-title" class="auth-title">Create your account</h1>
+      <p class="auth-copy">Your workspace and learning history stay connected to your account.</p>
+      {{if .Error}}<div class="alert alert-error auth-server-error" role="alert">{{.Error}}</div>{{end}}
+      <form class="auth-form" action="/api/auth/signup" method="post" data-auth-form>
+        <div class="auth-field"><label for="name">Full name</label><input class="input" id="name" name="name" type="text" autocomplete="name" required maxlength="100" placeholder="Your name"></div>
+        <div class="auth-field"><label for="email">Email</label><input class="input" id="email" name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@school.edu"></div>
+        <div class="auth-field"><label for="password">Password</label><input class="input" id="password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72" placeholder="At least 8 characters"></div>
+        <div class="auth-field"><label for="role">I am joining as</label><select class="select" id="role" name="role" required><option value="student">Student</option><option value="teacher">Teacher</option></select></div>
+        <p class="auth-error" role="status" aria-live="polite" data-auth-error></p>
+        <button class="btn btn-primary btn-block" type="submit" data-auth-submit>Create account</button>
+      </form>
+      <p class="auth-footer">Already have an account? <a href="/login">Sign in</a></p>
+      <a class="auth-home" href="/">← Back to CoLearn</a>
+    </section>
+  </main>
+</body>
+</html>

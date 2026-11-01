@@ -1,24 +1,20 @@
 {{define "faculty/page.html"}}
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Faculty Portal</title>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assessment summary · CoLearn</title>
+  <link rel="stylesheet" href="/static/assets/app.css">
 </head>
 <body>
-  <h1>Faculty Portal</h1>
-  <div
-    id="summary"
-    hx-get="/faculty/summary?role=faculty"
-    hx-trigger="load, every 20s"
-    hx-swap="outerHTML">Loading summary...</div>
-
-  <div
-    id="missing"
-    hx-get="/faculty/missing?role=faculty"
-    hx-trigger="load, every 20s"
-    hx-swap="outerHTML">Loading missing work...</div>
+  <div class="shell">
+    <main class="page page-narrow">
+      <header class="page-heading"><div><div class="eyebrow">Legacy assessment portal</div><h1 class="page-title">Assessment summary</h1><p class="page-lede">Class assessment status and outstanding submissions.</p></div><a class="btn btn-secondary" href="/teacher">Teacher dashboard</a></header>
+      <section class="card card-pad">{{template "faculty/summary.html" .}}</section>
+      <section class="card card-pad mt-24">{{template "faculty/missing.html" .}}</section>
+    </main>
+  </div>
 </body>
 </html>
 {{end}}

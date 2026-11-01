@@ -24,9 +24,9 @@ The first slice is intentionally thin but demonstrable:
 - concept progress and next-action read models
 - polished student dashboard and learning space
 - teacher class dashboard and content studio
-- HTML/HTMX and versioned JSON API surfaces
+- server-rendered HTML and versioned JSON API surfaces
 
-The application currently uses thread-safe in-memory repositories and a demo role/student identity. These are visible seams for replacement, not production security mechanisms.
+Accounts, course content, learning sessions, turns, and agent execution records use SQLite. Progress and formative-check read models use the durable snapshot store. Signed account identity controls student and teacher route access; the seeded demo accounts remain available for local review.
 
 ## Project structure
 
@@ -34,12 +34,15 @@ The application currently uses thread-safe in-memory repositories and a demo rol
 src/
   cmd/api/                     # entrypoint only
   adapter/memory/              # in-memory repositories and deterministic gateways
+  adapter/sqlite/              # durable accounts, content, sessions, and agent records
+  agentic/                     # tutor orchestration and formative-check collaboration
+  auth/                        # signed identity, password hashing, and account contracts
   bootstrap/                   # dependency wiring and demo seed data
   config/                      # runtime configuration
   controller/                  # HTML and JSON request orchestration
   domain/                      # learning and legacy assessment entities
   repository/                  # persistence and provider ports
-  routes/                      # route registration and demo role middleware
+  routes/                      # route registration and identity-based role middleware
   service/                     # tutor response policy and legacy evaluator
   templates/                   # server-rendered HTML and shared CSS
   usecase/                     # student/teacher learning workflows
@@ -61,12 +64,15 @@ go run ./src/cmd/api
 Open:
 
 - `http://localhost:8080/` — product landing page
-- `http://localhost:8080/student?role=student&student_id=S-001` — student dashboard
-- `http://localhost:8080/student/workspace?role=student&student_id=S-001` — learning space
-- `http://localhost:8080/teacher?role=teacher` — teacher dashboard
-- `http://localhost:8080/teacher/content?role=teacher` — content studio
+- `http://localhost:8080/login` — sign in with the demo student or teacher account
+- `http://localhost:8080/signup` — create a persistent student or teacher account
+- `http://localhost:8080/profile` — view the signed-in account
 
-The demo accepts `role=teacher` or `role=faculty` for teacher routes while the codebase transitions from the legacy faculty vocabulary.
+The demo accounts are `student@demo.edu` / `student123` and `teacher@demo.edu` / `teacher123`. Role access comes from the signed-in account; query parameters do not select a user or role.
+
+Set `COLEARN_JWT_SECRET` to a stable random value of at least 32 bytes before deployment so signed-in sessions survive restarts. Set `COLEARN_COOKIE_SECURE=true` when TLS terminates at a trusted reverse proxy.
+
+Set `COLEARN_DEMO_ACCOUNTS=false` before deployment to disable the seeded demo passwords. The demo account records remain as course references but receive fresh random passwords at startup.
 
 ### Docker and containerization
 
@@ -113,4 +119,4 @@ They are not linked from the co-learning product UI.
 
 ## Production follow-up
 
-Before deployment, replace the demo identity and in-memory adapters, add authenticated actor ownership checks, add a bounded source-ingestion adapter, connect a real model provider behind `LearningAgentGateway`, and expand the optional understanding checker with production rubric/provider versioning. The original requirement document should remain unchanged as the source requirement record.
+Before deployment, replace the demo accounts, add course enrollment and teacher ownership checks, add a bounded source-ingestion adapter, connect a real model provider behind `LearningAgentGateway`, and expand the optional understanding checker with production rubric/provider versioning. The agent planner and formative-checker run through the learning workflow and write execution records to SQLite; the configured tutor and check providers are deterministic demo adapters. The original requirement document should remain unchanged as the source requirement record.

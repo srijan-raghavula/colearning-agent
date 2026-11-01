@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/srijan-raghavula/colearning-agent/src/auth"
 	"github.com/srijan-raghavula/colearning-agent/src/domain"
 	"github.com/srijan-raghavula/colearning-agent/src/usecase"
 	"github.com/srijan-raghavula/colearning-agent/src/view"
@@ -21,10 +22,20 @@ type LearningController struct {
 	student  usecase.StudentLearningPortal
 	teacher  usecase.TeacherLearningPortal
 	renderer *view.Renderer
+	accounts accountLookup
+}
+
+type accountLookup interface {
+	FindAccountByID(context.Context, string) (auth.Account, bool, error)
 }
 
 func NewLearningController(student usecase.StudentLearningPortal, teacher usecase.TeacherLearningPortal, renderer *view.Renderer) LearningController {
 	return LearningController{student: student, teacher: teacher, renderer: renderer}
+}
+
+func (c LearningController) WithAccountLookup(accounts accountLookup) LearningController {
+	c.accounts = accounts
+	return c
 }
 
 type learningWorkspaceView struct {
@@ -51,6 +62,9 @@ func (c LearningController) StudentPage(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
+		dashboard.StudentName = identity.Name
+	}
 	c.renderer.Render(w, "student/dashboard.html", map[string]any{
 		"Role":      "student",
 		"StudentID": dashboard.StudentID,
@@ -66,6 +80,9 @@ func (c LearningController) StudentWorkspace(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
+		dashboard.StudentName = identity.Name
+	}
 
 	sessionID := r.URL.Query().Get("session_id")
 	conceptID := r.URL.Query().Get("concept_id")
@@ -80,7 +97,7 @@ func (c LearningController) StudentWorkspace(w http.ResponseWriter, r *http.Requ
 			http.Error(w, startErr.Error(), http.StatusBadRequest)
 			return
 		}
-		redirect := "/student/workspace?role=student&student_id=" + url.QueryEscape(studentID) + "&session_id=" + url.QueryEscape(session.ID)
+		redirect := "/student/workspace?session_id=" + url.QueryEscape(session.ID)
 		http.Redirect(w, r, redirect, http.StatusSeeOther)
 		return
 	}
@@ -109,8 +126,7 @@ func (c LearningController) StudentWorkspace(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	c.renderer.Render(w, "student/workspace.html", map[string]any{
-		"Role":      "student",
-		"StudentID": studentID,
+		"Role": "student",
 		"Workspace": learningWorkspaceView{
 			Dashboard:    dashboard,
 			Session:      session,
@@ -120,6 +136,7 @@ func (c LearningController) StudentWorkspace(w http.ResponseWriter, r *http.Requ
 			SelectedMode: selectedMode,
 			Check:        check,
 			Notice:       r.URL.Query().Get("notice"),
+			Error:        r.URL.Query().Get("error"),
 		},
 	})
 }
@@ -144,7 +161,7 @@ func (c LearningController) StartStudentSession(w http.ResponseWriter, r *http.R
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	redirect := "/student/workspace?role=student&student_id=" + url.QueryEscape(studentID) + "&session_id=" + url.QueryEscape(session.ID) + "&notice=Session%20ready"
+	redirect := "/student/workspace?session_id=" + url.QueryEscape(session.ID) + "&notice=Session%20ready"
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
@@ -154,7 +171,11 @@ func (c LearningController) SendStudentTurn(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		c.renderTurnError(w, r, "invalid form")
+		if r.Header.Get("HX-Request") != "" {
+			c.renderTurnError(w, r, "invalid form")
+		} else {
+			http.Redirect(w, r, workspaceLocation(r.FormValue("session_id"), "", "Please check your message and try again."), http.StatusSeeOther)
+		}
 		return
 	}
 	studentID := studentIDFromRequest(r)
@@ -172,7 +193,7 @@ func (c LearningController) SendStudentTurn(w http.ResponseWriter, r *http.Reque
 			c.renderTurnError(w, r, err.Error())
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Redirect(w, r, workspaceLocation(sessionID, "", err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -184,16 +205,11 @@ func (c LearningController) SendStudentTurn(w http.ResponseWriter, r *http.Reque
 	if r.Header.Get("HX-Request") != "" {
 		c.renderer.Render(w, "student/workspace_conversation.html", map[string]any{
 			"Role":      "student",
-			"StudentID": studentID,
 			"Workspace": workspace,
 		})
 		return
 	}
-	c.renderer.Render(w, "student/workspace.html", map[string]any{
-		"Role":      "student",
-		"StudentID": studentID,
-		"Workspace": workspace,
-	})
+	http.Redirect(w, r, workspaceLocation(result.Session.ID, "Your turn was sent.", ""), http.StatusSeeOther)
 }
 
 func (c LearningController) CheckStudentUnderstanding(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +218,7 @@ func (c LearningController) CheckStudentUnderstanding(w http.ResponseWriter, r *
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
+		http.Redirect(w, r, workspaceLocation(r.FormValue("session_id"), "", "Please try the understanding check again."), http.StatusSeeOther)
 		return
 	}
 	studentID := studentIDFromRequest(r)
@@ -212,7 +228,7 @@ func (c LearningController) CheckStudentUnderstanding(w http.ResponseWriter, r *
 			c.renderTurnError(w, r, err.Error())
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Redirect(w, r, workspaceLocation(r.FormValue("session_id"), "", err.Error()), http.StatusSeeOther)
 		return
 	}
 	workspace, err := c.workspaceView(r.Context(), studentID, r.FormValue("session_id"), domain.TutorMode(r.FormValue("mode")))
@@ -223,16 +239,23 @@ func (c LearningController) CheckStudentUnderstanding(w http.ResponseWriter, r *
 	if r.Header.Get("HX-Request") != "" {
 		c.renderer.Render(w, "student/workspace_conversation.html", map[string]any{
 			"Role":      "student",
-			"StudentID": studentID,
 			"Workspace": workspace,
 		})
 		return
 	}
-	c.renderer.Render(w, "student/workspace.html", map[string]any{
-		"Role":      "student",
-		"StudentID": studentID,
-		"Workspace": workspace,
-	})
+	http.Redirect(w, r, workspaceLocation(r.FormValue("session_id"), "Understanding check complete.", ""), http.StatusSeeOther)
+}
+
+func workspaceLocation(sessionID, notice, message string) string {
+	query := url.Values{}
+	query.Set("session_id", sessionID)
+	if notice != "" {
+		query.Set("notice", notice)
+	}
+	if message != "" {
+		query.Set("error", message)
+	}
+	return "/student/workspace?" + query.Encode()
 }
 
 func (c LearningController) renderTurnError(w http.ResponseWriter, r *http.Request, message string) {
@@ -248,6 +271,9 @@ func (c LearningController) workspaceView(ctx context.Context, studentID, sessio
 	dashboard, err := c.student.Dashboard(ctx, studentID)
 	if err != nil {
 		return learningWorkspaceView{}, err
+	}
+	if identity, ok := auth.IdentityFromContext(ctx); ok {
+		dashboard.StudentName = identity.Name
 	}
 	session, turns, err := c.student.Session(ctx, sessionID)
 	if err != nil {
@@ -282,6 +308,9 @@ func (c LearningController) StudentDashboardJSON(w http.ResponseWriter, r *http.
 		writeAPIError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
+		dashboard.StudentName = identity.Name
+	}
 	writeJSON(w, http.StatusOK, toAPIStudentDashboard(dashboard))
 }
 
@@ -290,8 +319,7 @@ func (c LearningController) StartStudentSessionJSON(w http.ResponseWriter, r *ht
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	// The demo identity seam is resolved by the controller. A real auth
-	// middleware will replace this before the request body is trusted.
+	// Derive ownership from the authenticated identity, never the request body.
 	req.StudentID = studentIDFromRequest(r)
 	session, err := c.student.StartOrResume(r.Context(), req)
 	if err != nil {
@@ -327,8 +355,8 @@ func (c LearningController) SendStudentTurnJSON(w http.ResponseWriter, r *http.R
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	// Resolve the learner from the demo identity seam rather than trusting the
-	// JSON body's student_id field.
+	// Resolve the learner from the authenticated identity rather than trusting
+	// the JSON body's student_id field.
 	req.StudentID = studentIDFromRequest(r)
 	req.SessionID = r.PathValue("session_id")
 	if req.SessionID == "" {
@@ -362,10 +390,14 @@ func (c LearningController) TeacherPage(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
+		dashboard.Course.TeacherName = identity.Name
+	}
 	c.renderer.Render(w, "faculty/dashboard.html", map[string]any{
-		"Role":      "teacher",
-		"Dashboard": dashboard,
-		"Notice":    r.URL.Query().Get("notice"),
+		"Role":         "teacher",
+		"Dashboard":    dashboard,
+		"StudentNames": c.studentNames(r.Context(), dashboard),
+		"Notice":       r.URL.Query().Get("notice"),
 	})
 }
 
@@ -375,12 +407,42 @@ func (c LearningController) TeacherContent(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
+		dashboard.Course.TeacherName = identity.Name
+	}
 	c.renderer.Render(w, "faculty/content.html", map[string]any{
-		"Role":      "teacher",
-		"Dashboard": dashboard,
-		"Notice":    r.URL.Query().Get("notice"),
-		"Error":     r.URL.Query().Get("error"),
+		"Role":         "teacher",
+		"Dashboard":    dashboard,
+		"StudentNames": c.studentNames(r.Context(), dashboard),
+		"Notice":       r.URL.Query().Get("notice"),
+		"Error":        r.URL.Query().Get("error"),
 	})
+}
+
+func (c LearningController) studentNames(ctx context.Context, dashboard domain.TeacherLearningDashboard) map[string]string {
+	names := make(map[string]string)
+	for _, card := range dashboard.SupportNeeded {
+		if card.StudentName != "" {
+			names[card.StudentID] = card.StudentName
+		}
+	}
+	if c.accounts == nil {
+		return names
+	}
+	ids := make(map[string]struct{})
+	for _, item := range dashboard.RecentEvidence {
+		ids[item.StudentID] = struct{}{}
+	}
+	for _, item := range dashboard.SupportNeeded {
+		ids[item.StudentID] = struct{}{}
+	}
+	for id := range ids {
+		account, found, err := c.accounts.FindAccountByID(ctx, id)
+		if err == nil && found && account.Name != "" {
+			names[id] = account.Name
+		}
+	}
+	return names
 }
 
 func (c LearningController) PublishMaterial(w http.ResponseWriter, r *http.Request) {
@@ -401,11 +463,11 @@ func (c LearningController) PublishMaterial(w http.ResponseWriter, r *http.Reque
 		SourceRef:  r.FormValue("source_ref"),
 	})
 	if err != nil {
-		redirect := "/teacher/content?role=teacher&error=" + url.QueryEscape(err.Error())
+		redirect := "/teacher/content?error=" + url.QueryEscape(err.Error())
 		http.Redirect(w, r, redirect, http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/teacher/content?role=teacher&notice=Material%20published", http.StatusSeeOther)
+	http.Redirect(w, r, "/teacher/content?notice=Material%20published", http.StatusSeeOther)
 }
 
 func (c LearningController) UpdateTutorPolicy(w http.ResponseWriter, r *http.Request) {
@@ -431,11 +493,11 @@ func (c LearningController) UpdateTutorPolicy(w http.ResponseWriter, r *http.Req
 		SourcePolicy:         r.FormValue("source_policy"),
 	})
 	if err != nil {
-		redirect := "/teacher/content?role=teacher&error=" + url.QueryEscape(err.Error())
+		redirect := "/teacher/content?error=" + url.QueryEscape(err.Error())
 		http.Redirect(w, r, redirect, http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/teacher/content?role=teacher&notice=Tutor%20policy%20updated", http.StatusSeeOther)
+	http.Redirect(w, r, "/teacher/content?notice=Tutor%20policy%20updated", http.StatusSeeOther)
 }
 
 func (c LearningController) TeacherDashboardJSON(w http.ResponseWriter, r *http.Request) {
@@ -443,6 +505,9 @@ func (c LearningController) TeacherDashboardJSON(w http.ResponseWriter, r *http.
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
+		dashboard.Course.TeacherName = identity.Name
 	}
 	writeJSON(w, http.StatusOK, toAPITeacherDashboard(dashboard))
 }
@@ -477,6 +542,9 @@ func (c LearningController) UpdateTutorPolicyJSON(w http.ResponseWriter, r *http
 }
 
 func studentIDFromRequest(r *http.Request) string {
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok && identity.Role == "student" {
+		return identity.ID
+	}
 	studentID := r.URL.Query().Get("student_id")
 	if studentID == "" {
 		studentID = r.FormValue("student_id")

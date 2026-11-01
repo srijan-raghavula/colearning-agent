@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/srijan-raghavula/colearning-agent/src/auth"
 	"github.com/srijan-raghavula/colearning-agent/src/usecase"
 	"github.com/srijan-raghavula/colearning-agent/src/view"
 )
@@ -18,18 +19,12 @@ func NewStudentController(portal usecase.StudentPortal, renderer *view.Renderer)
 }
 
 func (c StudentController) Page(w http.ResponseWriter, r *http.Request) {
-	studentID := r.URL.Query().Get("student_id")
-	if studentID == "" {
-		studentID = "S-001"
-	}
+	studentID := legacyStudentID(r)
 	c.renderDashboard(w, r, studentID, "student/page.html")
 }
 
 func (c StudentController) SubmissionsPartial(w http.ResponseWriter, r *http.Request) {
-	studentID := r.URL.Query().Get("student_id")
-	if studentID == "" {
-		studentID = "S-001"
-	}
+	studentID := legacyStudentID(r)
 	c.renderDashboard(w, r, studentID, "student/submissions.html")
 }
 
@@ -49,10 +44,7 @@ func (c StudentController) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	studentID := r.FormValue("student_id")
-	if studentID == "" {
-		studentID = "S-001"
-	}
+	studentID := legacyStudentID(r)
 
 	_, err = c.portal.Submit(r.Context(), usecase.SubmitRequest{
 		ID:         r.FormValue("id"),
@@ -67,8 +59,17 @@ func (c StudentController) Submit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	c.renderDashboard(w, r, studentID, "student/page.html")
+}
 
-	c.renderDashboard(w, r, studentID, "student/submissions.html")
+func legacyStudentID(r *http.Request) string {
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok && identity.Role == "student" {
+		return identity.ID
+	}
+	if studentID := r.URL.Query().Get("student_id"); studentID != "" {
+		return studentID
+	}
+	return "S-001"
 }
 
 func (c StudentController) renderDashboard(w http.ResponseWriter, r *http.Request, studentID, templateName string) {
@@ -76,6 +77,9 @@ func (c StudentController) renderDashboard(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
+		dashboard.StudentName = identity.Name
 	}
 	c.renderer.Render(w, templateName, map[string]any{
 		"Role":      "student",

@@ -10,15 +10,26 @@ This document describes the first versioned JSON contract for the co-learning ve
 - Timestamps are RFC 3339 UTC values.
 - Semantic validation errors currently use `400` in the first slice; a later error taxonomy can distinguish `422` without changing the success shapes.
 - Errors use the envelope `{ "error": "message" }` in this first slice.
-- The current demo accepts `role=student` or `role=teacher` in the query string, or the equivalent `X-Role` header. Production authentication must replace this.
+- Authenticate with `POST /api/auth/login` or `POST /api/auth/signup`. The server sets an HttpOnly session cookie; send that cookie with these requests. Query parameters and `X-Role` do not grant identity.
 - JSON responses are mapped through explicit DTOs in `src/controller/api_dto.go`; domain refactors do not automatically alter the v1 response shape.
 
-The client-supplied `student_id` is a demo convenience only. The controller resolves the learner from the request identity seam and does not trust a body ownership field. A production identity provider must derive the learner from the authenticated session.
+The controller derives the learner ID and role from the signed session and ignores body/query ownership fields.
+
+## Account endpoints
+
+```http
+POST /api/auth/login
+POST /api/auth/signup
+GET  /profile
+GET  /logout
+```
+
+Login and signup set the `auth_token` HttpOnly cookie. The browser UI redirects to the workspace for the account role. The profile page shows the account name, email, role, and account ID.
 
 ## Student dashboard
 
 ```http
-GET /api/v1/student/dashboard?role=student&student_id=S-001
+GET /api/v1/student/dashboard
 ```
 
 Returns a `StudentLearningDashboard` containing:
@@ -34,7 +45,7 @@ Returns a `StudentLearningDashboard` containing:
 ## Start or resume a session
 
 ```http
-POST /api/v1/student/sessions?role=student&student_id=S-001
+POST /api/v1/student/sessions
 Content-Type: application/json
 ```
 
@@ -46,7 +57,7 @@ Content-Type: application/json
 }
 ```
 
-`student_id`, `course_id`, `concept_id`, and `mode` are optional for the demo. The use case resolves the current course and active session when they are omitted.
+`course_id`, `concept_id`, and `mode` are optional. The authenticated student ID always comes from the session, never from the request body. The use case resolves the current course and active session when the other fields are omitted.
 
 Successful response: `201 Created`
 
@@ -68,7 +79,7 @@ The operation is idempotent in the sense that an existing active session for the
 ## Read a session
 
 ```http
-GET /api/v1/student/sessions/session-s001-linear?role=student&student_id=S-001
+GET /api/v1/student/sessions/session-s001-linear
 ```
 
 Response: `200 OK`
@@ -87,12 +98,12 @@ Response: `200 OK`
 }
 ```
 
-The server must verify that the authenticated learner owns the session. The demo uses the request identity seam until authentication is implemented.
+The server verifies that the authenticated learner owns the session.
 
 ## Add a learning turn
 
 ```http
-POST /api/v1/student/sessions/session-s001-linear/turns?role=student&student_id=S-001
+POST /api/v1/student/sessions/session-s001-linear/turns
 Content-Type: application/json
 ```
 
@@ -142,7 +153,7 @@ The operation persists both the student message and the tutor response before re
 ## Teacher dashboard
 
 ```http
-GET /api/v1/teacher/dashboard?role=teacher
+GET /api/v1/teacher/dashboard
 ```
 
 Returns a `TeacherLearningDashboard` containing:
@@ -156,7 +167,7 @@ Returns a `TeacherLearningDashboard` containing:
 ## Publish learning material
 
 ```http
-POST /api/v1/teacher/materials?role=teacher
+POST /api/v1/teacher/materials
 Content-Type: application/json
 ```
 
@@ -178,7 +189,7 @@ Successful response: `201 Created` with the published `LearningMaterial`.
 ## Update tutor policy
 
 ```http
-PUT /api/v1/teacher/courses/course-algebra-foundations/tutor-policy?role=teacher
+PUT /api/v1/teacher/courses/course-algebra-foundations/tutor-policy
 Content-Type: application/json
 ```
 
@@ -198,7 +209,7 @@ The default mode must be included in `allowed_modes`. An empty `allowed_modes` l
 ## Optional understanding check
 
 ```http
-POST /api/v1/student/sessions/session-s001-linear/understanding-checks?role=student&student_id=S-001
+POST /api/v1/student/sessions/session-s001-linear/understanding-checks
 ```
 
 This operation is explicit and optional. It evaluates the most recent student explanation or practice turn, stores formative evidence, and returns a check result without creating an assignment or final grade. Repeating the request for the same latest turn returns the existing check rather than creating a duplicate.
@@ -231,12 +242,10 @@ POST /api/v1/teacher/sources
 
 The current check is intentionally lightweight. A production implementation can add rubric/provider versioning and more explicit evidence types without changing the learning-session contract.
 
-## Security requirements before production
+## Remaining production work
 
-1. Derive actor ID and role from an authenticated session.
-2. Enforce course/teacher ownership for content and policy writes.
-3. Enforce session participation for every student read and turn.
-4. Validate HTTP(S) source URLs and protect against SSRF, private-address access, excessive redirects, and oversized responses.
-5. Treat retrieved source text as untrusted data that cannot override tutor instructions.
-6. Add request size limits, rate limits, structured audit events, and provider timeouts.
-7. Never accept model-generated URLs as trusted source references without server-side resolution.
+1. Enforce course enrollment and teacher ownership for content and policy writes.
+2. Validate HTTP(S) source URLs and protect against SSRF, private-address access, excessive redirects, and oversized responses.
+3. Treat retrieved source text as untrusted data that cannot override tutor instructions.
+4. Add rate limits and provider timeouts.
+5. Never accept model-generated URLs as trusted source references without server-side resolution.

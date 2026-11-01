@@ -273,8 +273,13 @@ func (p StudentLearningPortal) Dashboard(ctx context.Context, studentID string) 
 	}
 
 	var active *domain.LearningSession
+	sessionMinutes := 0
 	if hasSession {
 		active = &activeSession
+		elapsed := activeSession.LastActiveAt.Sub(activeSession.StartedAt)
+		if elapsed > 0 {
+			sessionMinutes = int(elapsed.Minutes())
+		}
 	}
 	return domain.StudentLearningDashboard{
 		StudentID:        studentID,
@@ -291,8 +296,7 @@ func (p StudentLearningPortal) Dashboard(ctx context.Context, studentID string) 
 		Stats: domain.StudentLearningStats{
 			ConceptsStarted: started,
 			ConceptsSecure:  secure,
-			LearningMinutes: 86 + len(turns)*7,
-			StreakDays:      6,
+			LearningMinutes: sessionMinutes,
 		},
 	}, nil
 }

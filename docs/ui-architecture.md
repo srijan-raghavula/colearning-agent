@@ -10,7 +10,9 @@ All product pages share:
 - a clear student/teacher role context
 - a responsive page container
 - shared spacing, color, typography, and button tokens
-- server-rendered HTML with HTMX only for targeted conversation refreshes
+- server-rendered HTML with full-page post/redirect/get for reliable form submissions
+- signed-in account identity with role-aware student and teacher routes
+- a profile page with the current account name, email, role, and ID
 
 The stylesheet lives at `src/templates/assets/app.css` and is served by the application at `/static/assets/app.css`.
 
@@ -43,7 +45,7 @@ The workspace is intentionally transcript-first.
 - source chips on tutor messages
 - configurable tutor mode selector
 - explicit empty state before the first turn
-- HTMX turn composer
+- turn composer with a normal HTML form fallback
 - optional understanding-check action and formative feedback panel
 - sticky learning brief with goal, sources, and next action
 

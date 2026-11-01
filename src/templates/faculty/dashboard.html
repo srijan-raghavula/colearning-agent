@@ -10,16 +10,16 @@
 <body>
   <div class="shell">
     <header class="topbar">
-      <a class="brand" href="/teacher?role=teacher"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Teacher workspace</span></span></a>
-      <nav class="main-nav"><a class="active" href="/teacher?role=teacher">Class overview</a><a href="/teacher/content?role=teacher">Content studio</a><a href="/student?role=student&amp;student_id=S-001">Student view</a></nav>
-      <div class="topbar-spacer"></div>
-      <div class="topbar-meta"><span class="role-pill"><span class="role-dot"></span>Teacher mode</span><span class="avatar coral">{{slice .Dashboard.Course.TeacherName 0 1}}</span></div>
+      <a class="brand" href="/teacher"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Teacher workspace</span></span></a>
+      <nav class="main-nav"><a class="active" href="/teacher">Class overview</a><a href="/teacher/content">Content studio</a><a href="/profile">Profile</a></nav>
+      <div class="topbar-spacer"></div><a class="topbar-account" href="/profile">Account</a>
+      <div class="topbar-meta"><span class="role-pill"><span class="role-dot"></span>Teacher mode</span><span class="avatar coral">{{initials .Dashboard.Course.TeacherName}}</span></div>
     </header>
     <main class="page">
       {{if .Notice}}<div class="alert alert-success"><span>✓</span><span>{{.Notice}}</span></div>{{end}}
       <section class="page-heading">
         <div><div class="eyebrow">{{.Dashboard.Course.Subject}} · Teacher workspace</div><h1 class="page-title">See the learning behind the numbers.</h1><p class="page-lede">Shape the context your students learn from, then use concept progress to decide where your attention matters next.</p></div>
-        <div class="page-actions"><a class="btn btn-primary" href="/teacher/content?role=teacher">Open content studio <span>→</span></a></div>
+        <div class="page-actions"><a class="btn btn-primary" href="/teacher/content">Open content studio <span>→</span></a></div>
       </section>
 
       <section class="grid grid-4" style="margin-bottom:22px">
@@ -41,7 +41,7 @@
           <article class="card card-pad">
             <div class="card-header"><div><h2 class="card-title">Recent learning signals</h2><p class="card-subtitle">A lightweight activity stream, not a gradebook.</p></div><span class="badge badge-blue">Evidence model</span></div>
             <div class="activity-list">
-              {{range .Dashboard.RecentEvidence}}<div class="activity-item"><span class="activity-dot"></span><div class="activity-text"><strong>{{.StudentID}} · {{.Kind}}</strong><br>{{.Note}}</div><span class="tiny faint">{{.ObservedAt.Format "Jan 2, 15:04"}}</span></div>{{else}}<div class="muted small">No learning signals yet.</div>{{end}}
+              {{range .Dashboard.RecentEvidence}}<div class="activity-item"><span class="activity-dot"></span><div class="activity-text"><strong>{{with index $.StudentNames .StudentID}}{{.}}{{else}}{{.StudentID}}{{end}} · {{.Kind}}</strong><br>{{.Note}}</div><span class="tiny faint">{{.ObservedAt.Format "Jan 2, 15:04"}}</span></div>{{else}}<div class="muted small">No learning signals yet.</div>{{end}}
             </div>
           </article>
         </div>
@@ -50,9 +50,9 @@
           <article class="card card-pad">
             <div class="card-header"><div><h2 class="card-title">Support queue</h2><p class="card-subtitle">Where a nudge may unlock momentum.</p></div><span class="badge badge-coral">Actionable</span></div>
             <div class="support-list">
-              {{range .Dashboard.SupportNeeded}}<div class="support-item"><span class="avatar {{if eq .StudentID "S-001"}}teal{{else}}coral{{end}}">{{slice .StudentName 0 1}}</span><div class="support-body"><div class="support-name">{{.StudentName}}</div><div class="support-detail">{{.ConceptTitle}} · {{.NextAction}}</div></div><span class="support-score">{{.Confidence}}%</span></div>{{else}}<div class="conversation-empty" style="min-height:150px"><div class="empty-icon">✓</div><strong>No urgent signals</strong><span>Your class is in a steady rhythm.</span></div>{{end}}
+              {{range .Dashboard.SupportNeeded}}<div class="support-item"><span class="avatar {{if eq .StudentID "S-001"}}teal{{else}}coral{{end}}">{{initials (index $.StudentNames .StudentID)}}</span><div class="support-body"><div class="support-name">{{with index $.StudentNames .StudentID}}{{.}}{{else}}{{.StudentName}}{{end}}</div><div class="support-detail">{{.ConceptTitle}} · {{.NextAction}}</div></div><span class="support-score">{{.Confidence}}%</span></div>{{else}}<div class="conversation-empty" style="min-height:150px"><div class="empty-icon">✓</div><strong>No urgent signals</strong><span>Your class is in a steady rhythm.</span></div>{{end}}
             </div>
-            <a class="btn btn-secondary btn-block mt-16" href="/teacher/content?role=teacher">Review learning context</a>
+            <a class="btn btn-secondary btn-block mt-16" href="/teacher/content">Review learning context</a>
           </article>
 
           <article class="card card-pad policy-card">
@@ -60,7 +60,7 @@
             <div class="policy-row"><span>Default mode</span><strong>{{.Dashboard.Policy.DefaultMode.Label}}</strong></div>
             <div class="policy-row"><span>External sources</span><span class="policy-toggle"><strong>{{if .Dashboard.Policy.AllowExternalSources}}Allowed{{else}}Off{{end}}</strong><span class="switch {{if not .Dashboard.Policy.AllowExternalSources}}off{{end}}"></span></span></div>
             <div class="policy-row"><span>Source policy</span><strong>{{.Dashboard.Policy.SourcePolicy}}</strong></div>
-            <a class="btn btn-primary btn-block mt-16" href="/teacher/content?role=teacher">Edit tutor policy <span>→</span></a>
+            <a class="btn btn-primary btn-block mt-16" href="/teacher/content">Edit tutor policy <span>→</span></a>
           </article>
 
           <article class="card card-pad">

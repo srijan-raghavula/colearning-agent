@@ -3,6 +3,9 @@ package routes
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+
+	"github.com/srijan-raghavula/colearning-agent/src/auth"
 )
 
 func roleRequired(role string, next http.HandlerFunc) http.HandlerFunc {
@@ -29,7 +32,16 @@ func apiTeacherRoleRequired(next http.HandlerFunc) http.HandlerFunc {
 
 func requireRole(next http.HandlerFunc, accepts func(string) bool, message string, api bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !accepts(requestRole(r)) {
+		identity, err := auth.IdentityFromRequest(r)
+		if err != nil {
+			if api || strings.HasPrefix(r.URL.Path, "/api/") {
+				writeAPIError(w, http.StatusUnauthorized, "authentication required")
+			} else {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+			}
+			return
+		}
+		if !accepts(identity.Role) {
 			if api {
 				writeAPIError(w, http.StatusForbidden, message)
 			} else {
@@ -37,16 +49,19 @@ func requireRole(next http.HandlerFunc, accepts func(string) bool, message strin
 			}
 			return
 		}
-		next(w, r)
+		next(w, r.WithContext(auth.WithIdentity(r.Context(), identity)))
 	}
 }
 
-func requestRole(r *http.Request) string {
-	role := r.URL.Query().Get("role")
-	if role == "" {
-		role = r.Header.Get("X-Role")
+func authenticated(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		identity, err := auth.IdentityFromRequest(r)
+		if err != nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		next(w, r.WithContext(auth.WithIdentity(r.Context(), identity)))
 	}
-	return role
 }
 
 func isTeacherRole(role string) bool {

@@ -10,19 +10,19 @@
 <body>
   <div class="shell">
     <header class="topbar">
-      <a class="brand" href="/student?role=student&amp;student_id={{.StudentID}}">
+      <a class="brand" href="/student">
         <span class="brand-mark">C</span>
         <span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Student workspace</span></span>
       </a>
       <nav class="main-nav">
-        <a class="active" href="/student?role=student&amp;student_id={{.StudentID}}">Overview</a>
-        <a href="/student/workspace?role=student&amp;student_id={{.StudentID}}">Learning space</a>
-        <a href="/teacher?role=teacher">Teacher view</a>
+        <a class="active" href="/student">Overview</a>
+        <a href="/student/workspace">Learning space</a>
+        <a href="/profile">Profile</a>
       </nav>
-      <div class="topbar-spacer"></div>
+      <div class="topbar-spacer"></div><a class="topbar-account" href="/profile">Account</a>
       <div class="topbar-meta">
         <span class="role-pill"><span class="role-dot"></span>Learning mode · {{.Dashboard.Policy.DefaultMode.Label}}</span>
-        <span class="avatar">{{slice .Dashboard.StudentName 0 1}}{{slice .Dashboard.StudentName 6 7}}</span>
+        <span class="avatar">{{initials .Dashboard.StudentName}}</span>
       </div>
     </header>
 
@@ -35,15 +35,15 @@
           <p class="page-lede">Your next small step is ready. Keep the conversation going and build understanding over time.</p>
         </div>
         <div class="page-actions">
-          <a class="btn btn-primary" href="/student/workspace?role=student&amp;student_id={{.Dashboard.StudentID}}">Open learning space <span>→</span></a>
+          <a class="btn btn-primary" href="/student/workspace">Open learning space <span>→</span></a>
         </div>
       </section>
 
       <section class="grid grid-4 mb-0" style="margin-bottom:22px">
         <div class="card metric"><div class="between"><span class="metric-label">Concepts started</span><span class="metric-icon teal">◌</span></div><div class="metric-value">{{.Dashboard.Stats.ConceptsStarted}}<span style="font-size:15px;color:var(--muted);font-weight:500"> / {{len .Dashboard.Concepts}}</span></div><div class="metric-note">Your learning path</div></div>
         <div class="card metric"><div class="between"><span class="metric-label">Secure concepts</span><span class="metric-icon">✦</span></div><div class="metric-value">{{.Dashboard.Stats.ConceptsSecure}}</div><div class="metric-note">Growing confidence</div></div>
-        <div class="card metric"><div class="between"><span class="metric-label">Learning minutes</span><span class="metric-icon coral">◷</span></div><div class="metric-value">{{.Dashboard.Stats.LearningMinutes}}</div><div class="metric-note">This learning cycle</div></div>
-        <div class="card metric"><div class="between"><span class="metric-label">Current streak</span><span class="metric-icon amber">✹</span></div><div class="metric-value">{{.Dashboard.Stats.StreakDays}} <span style="font-size:15px;color:var(--muted);font-weight:500">days</span></div><div class="metric-note">Keep the rhythm gentle</div></div>
+        <div class="card metric"><div class="between"><span class="metric-label">Session minutes</span><span class="metric-icon coral">◷</span></div><div class="metric-value">{{.Dashboard.Stats.LearningMinutes}}</div><div class="metric-note">Time between session start and last activity</div></div>
+        <div class="card metric"><div class="between"><span class="metric-label">Turns in session</span><span class="metric-icon amber">✹</span></div><div class="metric-value">{{len .Dashboard.Turns}}</div><div class="metric-note">Your active learning conversation</div></div>
       </section>
 
       <section class="dashboard-grid">
@@ -54,7 +54,7 @@
             <p class="hero-copy">{{.Dashboard.FeaturedConcept.Summary}} Your tutor will meet you at {{.Dashboard.Policy.DefaultMode.Label}} and adjust as you learn.</p>
             <div class="hero-footer">
               <div class="hero-meta"><strong style="color:#fff">{{.Dashboard.FeaturedProgress.Percent}}% confidence</strong><br>Next: {{.Dashboard.FeaturedProgress.NextAction}}</div>
-              <a class="btn btn-primary" href="/student/workspace?role=student&amp;student_id={{.Dashboard.StudentID}}&amp;concept_id={{.Dashboard.FeaturedConcept.ID}}">Continue session <span>→</span></a>
+              <a class="btn btn-primary" href="/student/workspace&amp;concept_id={{.Dashboard.FeaturedConcept.ID}}">Continue session <span>→</span></a>
             </div>
           </article>
 
@@ -65,7 +65,7 @@
             </div>
             <div class="path-list">
               {{range .Dashboard.Concepts}}
-                <a class="path-item {{if eq .Progress.Status "secure"}}secure{{end}} {{if eq .Progress.Status "needs_support"}}support{{end}}" href="/student/workspace?role=student&amp;student_id={{$.Dashboard.StudentID}}&amp;concept_id={{.Concept.ID}}">
+                <a class="path-item {{if eq .Progress.Status "secure"}}secure{{end}} {{if eq .Progress.Status "needs_support"}}support{{end}}" href="/student/workspace&amp;concept_id={{.Concept.ID}}">
                   <span class="path-number">{{printf "%02d" .Concept.Order}}</span>
                   <span class="path-body"><span class="path-title">{{.Concept.Title}}</span><span class="path-summary">{{.Concept.Summary}}</span></span>
                   <span class="path-side"><span class="badge {{if eq .Progress.Status "secure"}}badge-teal{{else if eq .Progress.Status "needs_support"}}badge-coral{{else if eq .Progress.Status "learning"}}badge-blue{{else}}badge-slate{{end}}">{{.State}}</span><span class="tiny muted">{{.Progress.Percent}}%</span></span>
@@ -91,7 +91,7 @@
             <div class="between"><span class="metric-icon">↗</span><span class="badge badge-teal">Next step</span></div>
             <h2 class="focus-title">{{.Dashboard.FeaturedProgress.NextAction}}</h2>
             <p class="focus-copy">{{if .Dashboard.Objective.Description}}{{.Dashboard.Objective.Description}}{{else}}Keep the conversation focused on one meaningful idea at a time.{{end}}</p>
-            <a class="btn btn-dark btn-block" href="/student/workspace?role=student&amp;student_id={{.Dashboard.StudentID}}&amp;concept_id={{.Dashboard.FeaturedConcept.ID}}">Start a learning turn <span>→</span></a>
+            <a class="btn btn-dark btn-block" href="/student/workspace&amp;concept_id={{.Dashboard.FeaturedConcept.ID}}">Start a learning turn <span>→</span></a>
             <div class="focus-next">Tutor style<strong>{{.Dashboard.Policy.DefaultMode.Label}}</strong></div>
           </article>
 
@@ -103,7 +103,7 @@
           </article>
 
           <article class="card card-pad">
-            <div class="card-header"><div><h2 class="card-title">Teacher context</h2><p class="card-subtitle">Who is shaping this path?</p></div><span class="avatar coral">{{slice .Dashboard.Course.TeacherName 0 1}}</span></div>
+            <div class="card-header"><div><h2 class="card-title">Teacher context</h2><p class="card-subtitle">Who is shaping this path?</p></div><span class="avatar coral">{{initials .Dashboard.Course.TeacherName}}</span></div>
             <div class="context-value">{{.Dashboard.Course.TeacherName}}</div>
             <div class="context-copy">{{.Dashboard.Course.Description}}</div>
             <div class="mt-16"><span class="badge badge-slate">{{.Dashboard.Policy.SourcePolicy}}</span></div>
