@@ -250,3 +250,17 @@ The current check is intentionally lightweight. A production implementation can 
 3. Treat retrieved source text as untrusted data that cannot override tutor instructions.
 4. Add rate limits and provider timeouts.
 5. Never accept model-generated URLs as trusted source references without server-side resolution.
+
+## Model provider configuration
+
+The tutor agent can use any OpenAI-compatible `/chat/completions` endpoint:
+
+```bash
+COLEARN_AI_PROVIDER=openai-compatible
+COLEARN_AI_API_KEY=...
+COLEARN_AI_MODEL=gpt-4o-mini
+COLEARN_AI_BASE_URL=https://api.openai.com/v1
+COLEARN_AI_TIMEOUT_SECONDS=45
+```
+
+The default provider remains `stub` for offline development. The provider response must be JSON matching the tutor contract; application guardrails filter unsupported kinds, sources, unsafe tone, and confidence deltas before persistence.
