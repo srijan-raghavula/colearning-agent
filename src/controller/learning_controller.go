@@ -594,7 +594,8 @@ func displayTutorMode(policy domain.TutorPolicy, requested, current domain.Tutor
 }
 
 func (c LearningController) StudentDashboardJSON(w http.ResponseWriter, r *http.Request) {
-	dashboard, err := c.student.DashboardForCourse(r.Context(), studentIDFromRequest(r), r.URL.Query().Get("course_id"))
+	studentID := studentIDFromRequest(r)
+	dashboard, err := c.student.DashboardForCourse(r.Context(), studentID, r.URL.Query().Get("course_id"))
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err)
 		return
@@ -605,7 +606,15 @@ func (c LearningController) StudentDashboardJSON(w http.ResponseWriter, r *http.
 	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
 		dashboard.StudentName = identity.Name
 	}
-	writeJSON(w, http.StatusOK, toAPIStudentDashboard(dashboard))
+	var enrollments []domain.CourseEnrollment
+	if c.enrollments != nil {
+		enrollments, err = c.enrollments.ListStudentEnrollments(r.Context(), studentID)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, errors.New("could not load student courses"))
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, toAPIStudentDashboard(dashboard, enrollments))
 }
 
 func (c LearningController) StartStudentSessionJSON(w http.ResponseWriter, r *http.Request) {
@@ -888,13 +897,24 @@ func (c LearningController) UpdateTutorPolicy(w http.ResponseWriter, r *http.Req
 
 func (c LearningController) TeacherDashboardJSON(w http.ResponseWriter, r *http.Request) {
 	identity, _ := auth.IdentityFromContext(r.Context())
-	dashboard, err := c.teacher.Dashboard(r.Context(), identity.ID)
+	dashboard, err := c.teacher.Dashboard(r.Context(), identity.ID, r.URL.Query().Get("course_id"))
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err)
 		return
 	}
 	dashboard.Course.TeacherName = identity.Name
-	writeJSON(w, http.StatusOK, toAPITeacherDashboard(dashboard))
+	courses, err := c.courses.ListCourses(r.Context())
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, errors.New("could not load teacher courses"))
+		return
+	}
+	ownedCourses := make([]domain.LearningCourse, 0, len(courses))
+	for _, course := range courses {
+		if course.TeacherID == identity.ID {
+			ownedCourses = append(ownedCourses, course)
+		}
+	}
+	writeJSON(w, http.StatusOK, toAPITeacherDashboard(dashboard, ownedCourses))
 }
 
 func (c LearningController) PublishMaterialJSON(w http.ResponseWriter, r *http.Request) {

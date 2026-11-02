@@ -24,7 +24,6 @@
       {{if .Workspace.Error}}<div class="alert alert-error"><span>!</span><span>{{.Workspace.Error}}</span></div>{{end}}
       <div class="workspace-header">
         <div><div class="eyebrow">{{.Workspace.Dashboard.Course.Title}} · Concept {{.Workspace.Concept.Order}}</div><h1 class="workspace-title">{{.Workspace.Concept.Title}}</h1><p class="page-lede">{{.Workspace.Concept.Summary}}</p></div>
-        <div class="page-actions"><a class="btn btn-secondary" href="/student">← Back to overview</a></div>
       </div>
       <div class="tabs" role="tablist" aria-label="Learning space"><button class="tab active" id="conversation-tab" type="button" role="tab" aria-selected="true" aria-controls="conversation-panel">Conversation</button><button class="tab" id="context-tab" type="button" role="tab" aria-selected="false" aria-controls="context-panel" tabindex="-1">Sources &amp; goals</button><span style="flex:1"></span><span class="badge badge-teal">{{.Workspace.Dashboard.FeaturedProgress.Percent}}% confidence</span></div>
 

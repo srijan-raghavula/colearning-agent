@@ -56,6 +56,54 @@ type courseCardView struct {
 	Enrollment        *domain.CourseEnrollment
 }
 
+type createCourseRequest struct {
+	Title       string `json:"title"`
+	Subject     string `json:"subject"`
+	Description string `json:"description"`
+}
+
+func (c CourseController) CreateCourseJSON(w http.ResponseWriter, r *http.Request) {
+	identity, ok := auth.IdentityFromContext(r.Context())
+	if !ok {
+		writeAPIError(w, http.StatusUnauthorized, fmt.Errorf("teacher identity required"))
+		return
+	}
+	var req createCourseRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Title = strings.TrimSpace(req.Title)
+	req.Subject = strings.TrimSpace(req.Subject)
+	req.Description = strings.TrimSpace(req.Description)
+	if req.Title == "" || req.Subject == "" || len([]rune(req.Title)) > 160 || len([]rune(req.Subject)) > 100 || len([]rune(req.Description)) > 4000 {
+		writeAPIError(w, http.StatusBadRequest, fmt.Errorf("title and subject are required; description must be under 4,000 characters"))
+		return
+	}
+	var randomID [16]byte
+	if _, err := rand.Read(randomID[:]); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, fmt.Errorf("could not create course"))
+		return
+	}
+	course := domain.LearningCourse{
+		ID:          "course-" + hex.EncodeToString(randomID[:]),
+		TeacherID:   identity.ID,
+		TeacherName: identity.Name,
+		Title:       req.Title,
+		Subject:     req.Subject,
+		Description: req.Description,
+		TutorPolicy: domain.TutorPolicy{
+			DefaultMode:   domain.TutorModeGuided,
+			AllowedModes:  []domain.TutorMode{domain.TutorModeGuided, domain.TutorModeSocratic, domain.TutorModeDirect, domain.TutorModePractice, domain.TutorModeHint, domain.TutorModeDiagnostic},
+			SourcePolicy: "Use published teacher material as the primary source.",
+		},
+	}
+	if err := c.courses.SaveCourse(r.Context(), course); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, fmt.Errorf("could not save course"))
+		return
+	}
+	writeJSON(w, http.StatusCreated, toAPICourse(course))
+}
+
 func (c CourseController) StudentCatalog(w http.ResponseWriter, r *http.Request) {
 	identity, ok := auth.IdentityFromContext(r.Context())
 	if !ok {

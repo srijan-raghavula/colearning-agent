@@ -84,6 +84,7 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions/{session_id}/turns", apiRoleRequired("student", deps.Learning.SendStudentTurnJSON, identityStore))
 	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions/{session_id}/understanding-checks", apiRoleRequired("student", deps.Learning.CheckStudentUnderstandingJSON, identityStore))
 	handleAPI(mux, http.MethodGet, "/api/v1/teacher/dashboard", apiTeacherRoleRequired(deps.Learning.TeacherDashboardJSON, identityStore))
+	handleAPI(mux, http.MethodPost, "/api/v1/teacher/courses", apiTeacherRoleRequired(deps.Courses.CreateCourseJSON, identityStore))
 	handleAPI(mux, http.MethodPost, "/api/v1/teacher/materials", apiTeacherRoleRequired(deps.Learning.PublishMaterialJSON, identityStore))
 	handleAPI(mux, http.MethodPut, "/api/v1/teacher/courses/{course_id}/tutor-policy", apiTeacherRoleRequired(deps.Learning.UpdateTutorPolicyJSON, identityStore))
 
