@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -15,7 +16,8 @@ import (
 )
 
 var (
-	jwtSecret = loadJWTSecret()
+	jwtSecretOnce sync.Once
+	jwtSecret     []byte
 )
 
 func loadJWTSecret() []byte {
@@ -184,7 +186,7 @@ func GenerateToken(userID, role, email, name string, versions ...int) (string, e
 		"ver":   version,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+	return token.SignedString(getJWTSecret())
 }
 
 func ValidateToken(tokenString string) (map[string]any, error) {
@@ -192,7 +194,7 @@ func ValidateToken(tokenString string) (map[string]any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
-		return jwtSecret, nil
+		return getJWTSecret(), nil
 	})
 	if err != nil {
 		return nil, err
@@ -218,6 +220,11 @@ func ValidateToken(tokenString string) (map[string]any, error) {
 		}, nil
 	}
 	return nil, errors.New("invalid token")
+}
+
+func getJWTSecret() []byte {
+	jwtSecretOnce.Do(func() { jwtSecret = loadJWTSecret() })
+	return jwtSecret
 }
 
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {

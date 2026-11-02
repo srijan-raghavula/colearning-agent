@@ -31,12 +31,12 @@ type App struct {
 	Config config.HTTP
 	Routes routes.Dependencies
 	Close  func() error
-	// Persist flushes the durable learning snapshot on shutdown; nil when the
-	// durable store is disabled.
-	Persist func(ctx context.Context)
 }
 
 func NewApp() (App, error) {
+	if err := config.LoadDotEnv(); err != nil {
+		return App{}, fmt.Errorf("load runtime environment: %w", err)
+	}
 	var sqlRepo *sqlite.SQLiteRepo
 	dbPath := os.Getenv("COLEARN_DB_PATH")
 	if dbPath == "" {
@@ -162,6 +162,9 @@ func NewApp() (App, error) {
 		sqlRepo = sqlite.NewRepo(db)
 		contentRepo = sqlRepo
 		sessionRepo = &sqlite.SessionRepo{SQLiteRepo: sqlRepo}
+		progressRepo = sqlite.ProgressRepo{SQLiteRepo: sqlRepo}
+		evidenceRepo = sqlite.EvidenceRepo{SQLiteRepo: sqlRepo}
+		checkRepo = sqlite.UnderstandingCheckRepo{SQLiteRepo: sqlRepo}
 		demoAccounts := os.Getenv("COLEARN_DEMO_ACCOUNTS") != "false"
 		studentPassword, passErr := seedPassword("student123", demoAccounts)
 		if passErr != nil {
@@ -289,13 +292,11 @@ func NewApp() (App, error) {
 		}
 	}
 
-	// ── Durable learning state ──────────────────────────────────────────────
-	// A file-backed snapshot of the repositories survives restarts. First boot
-	// keeps the seeded demo state and writes a baseline snapshot; later boots
-	// restore the last saved state in place of the seeds.
+	// ── Legacy learning snapshot import ─────────────────────────────────────
+	// Progress, evidence, and checks now use SQLite like the rest of the app.
+	// Import records absent from SQLite, then use SQLite as the single runtime
+	// source of truth.
 	learningStoreConfig := config.LoadLearningStore()
-	var learningPersistHook usecase.LearningChangeHook
-	var appPersist func(context.Context)
 	if learningStoreConfig.Enabled {
 		snapshotStore := persist.NewLearningStore(learningStoreConfig.Path, memContent, memSession, memProgress, memEvidence, memCheck)
 		loaded, loadErr := snapshotStore.Load(context.Background())
@@ -314,13 +315,11 @@ func NewApp() (App, error) {
 		} else if err := snapshotStore.Save(context.Background()); err != nil {
 			return App{}, fmt.Errorf("write initial learning snapshot baseline %q: %w", snapshotStore.Path(), err)
 		}
-
-		learningPersistHook = func(ctx context.Context) {
-			if err := snapshotStore.Save(ctx); err != nil {
-				log.Printf("learning snapshot save failed: %v", err)
-			}
+	}
+	if sqlRepo != nil {
+		if err := importLegacyLearningState(context.Background(), sqlRepo, memContent, memSession, memProgress, memEvidence, memCheck); err != nil {
+			return App{}, fmt.Errorf("import legacy learning state into SQLite: %w", err)
 		}
-		appPersist = learningPersistHook
 	}
 
 	var agentLogger agentic.ExecutionLogger
@@ -357,8 +356,8 @@ func NewApp() (App, error) {
 
 	studentPortal := usecase.NewStudentPortal(submissionRepo, evaluationRepo)
 	facultyPortal := usecase.NewFacultyPortal(submissionRepo, evaluationRepo)
-	studentLearningPortal := usecase.NewStudentLearningPortal(contentRepo, sessionRepo, progressRepo, evidenceRepo, checkRepo, learningAgent, understandingChecker).WithChangeHook(learningPersistHook)
-	teacherLearningPortal := usecase.NewTeacherLearningPortal(contentRepo, progressRepo, evidenceRepo).WithChangeHook(learningPersistHook)
+	studentLearningPortal := usecase.NewStudentLearningPortal(contentRepo, sessionRepo, progressRepo, evidenceRepo, checkRepo, learningAgent, understandingChecker)
+	teacherLearningPortal := usecase.NewTeacherLearningPortal(contentRepo, progressRepo, evidenceRepo)
 
 	renderer, err := view.NewRenderer("src/templates/**/*.html")
 	if err != nil {
@@ -382,7 +381,6 @@ func NewApp() (App, error) {
 			Renderer:    renderer,
 			Accounts:    accounts,
 		},
-		Persist: appPersist,
 		Close: func() error {
 			if db != nil {
 				return db.Close()
@@ -392,6 +390,89 @@ func NewApp() (App, error) {
 	}
 	dbTransferred = true
 	return app, nil
+}
+
+func importLegacyLearningState(
+	ctx context.Context,
+	repo *sqlite.SQLiteRepo,
+	content *memory.LearningContentRepository,
+	sessions *memory.LearningSessionRepository,
+	progress *memory.ConceptProgressRepository,
+	evidence *memory.LearningEvidenceRepository,
+	checks *memory.UnderstandingCheckRepository,
+) error {
+	legacySessions := sessions.ExportSnapshot()
+	for _, session := range legacySessions.Sessions {
+		if _, found, err := repo.FindByID(ctx, session.ID); err != nil {
+			return fmt.Errorf("read session %q: %w", session.ID, err)
+		} else if !found {
+			if err := repo.Save(ctx, session); err != nil {
+				return fmt.Errorf("import session %q: %w", session.ID, err)
+			}
+		}
+	}
+	for _, turn := range legacySessions.Turns {
+		storedTurns, err := repo.ListTurns(ctx, turn.SessionID)
+		if err != nil {
+			return fmt.Errorf("read turns for session %q: %w", turn.SessionID, err)
+		}
+		found := false
+		for _, stored := range storedTurns {
+			if stored.ID == turn.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if err := repo.AppendTurn(ctx, turn); err != nil {
+				return fmt.Errorf("import turn %q: %w", turn.ID, err)
+			}
+		}
+	}
+
+	dbProgress := sqlite.ProgressRepo{SQLiteRepo: repo}
+	legacyProgress, err := progress.ListAll(ctx)
+	if err != nil {
+		return fmt.Errorf("read legacy progress: %w", err)
+	}
+	for _, item := range legacyProgress {
+		if _, found, err := dbProgress.Find(ctx, item.StudentID, item.CourseID, item.ConceptID); err != nil {
+			return fmt.Errorf("read progress for %q: %w", item.StudentID, err)
+		} else if !found {
+			if err := dbProgress.Save(ctx, item); err != nil {
+				return fmt.Errorf("import progress for %q: %w", item.StudentID, err)
+			}
+		}
+	}
+
+	courses, err := content.ListCourses(ctx)
+	if err != nil {
+		return fmt.Errorf("read legacy courses: %w", err)
+	}
+	dbEvidence := sqlite.EvidenceRepo{SQLiteRepo: repo}
+	dbChecks := sqlite.UnderstandingCheckRepo{SQLiteRepo: repo}
+	for _, course := range courses {
+		legacyEvidence, err := evidence.ListByCourse(ctx, course.ID)
+		if err != nil {
+			return fmt.Errorf("read legacy evidence for course %q: %w", course.ID, err)
+		}
+		for _, item := range legacyEvidence {
+			if err := dbEvidence.Save(ctx, item); err != nil {
+				return fmt.Errorf("import evidence %q: %w", item.ID, err)
+			}
+		}
+
+		legacyChecks, err := checks.ListByCourse(ctx, course.ID)
+		if err != nil {
+			return fmt.Errorf("read legacy checks for course %q: %w", course.ID, err)
+		}
+		for _, item := range legacyChecks {
+			if err := dbChecks.Save(ctx, item); err != nil {
+				return fmt.Errorf("import understanding check %q: %w", item.ID, err)
+			}
+		}
+	}
+	return nil
 }
 
 func seedPassword(demoPassword string, allowDemo bool) (string, error) {

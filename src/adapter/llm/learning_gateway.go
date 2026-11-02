@@ -109,22 +109,22 @@ func (g *OpenAICompatibleGateway) completeJSON(ctx context.Context, system, user
 	request.Header.Set("Authorization", "Bearer "+g.APIKey)
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("call llm provider: %w", err)
+		return errors.New("call llm provider failed")
 	}
 	defer response.Body.Close()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))
 	if err != nil {
-		return fmt.Errorf("read llm response: %w", err)
+		return errors.New("read llm response failed")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("llm provider returned status %d: %s", response.StatusCode, providerError(responseBody))
+		return fmt.Errorf("llm provider returned status %d", response.StatusCode)
 	}
 	var completion chatResponse
 	if err := json.Unmarshal(responseBody, &completion); err != nil {
 		return fmt.Errorf("decode llm response: %w", err)
 	}
 	if completion.Error != nil {
-		return fmt.Errorf("llm provider error: %s", completion.Error.Message)
+		return errors.New("llm provider returned an error")
 	}
 	if len(completion.Choices) == 0 || strings.TrimSpace(completion.Choices[0].Message.Content) == "" {
 		return errors.New("llm provider returned no completion")
@@ -134,7 +134,7 @@ func (g *OpenAICompatibleGateway) completeJSON(ctx context.Context, system, user
 	content = strings.TrimPrefix(content, "```")
 	content = strings.TrimSuffix(strings.TrimSpace(content), "```")
 	if err := json.Unmarshal([]byte(content), target); err != nil {
-		return fmt.Errorf("decode llm contract: %w", err)
+		return errors.New("llm provider returned an invalid response")
 	}
 	return nil
 }
@@ -168,20 +168,4 @@ func marshalLearningRequest(req repository.LearningRequest) string {
 		req.Progress, req.Policy, req.Mode, req.Message,
 	})
 	return string(payload)
-}
-
-func providerError(body []byte) string {
-	var envelope struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if json.Unmarshal(body, &envelope) == nil && envelope.Error.Message != "" {
-		return envelope.Error.Message
-	}
-	message := strings.TrimSpace(string(body))
-	if len(message) > 400 {
-		return message[:400]
-	}
-	return message
 }

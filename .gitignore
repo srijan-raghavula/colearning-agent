@@ -1,2 +1,6 @@
 bin/
 data/
+.env
+.env.*
+!.env.example
+local-test-credentials.md

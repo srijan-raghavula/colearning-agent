@@ -11,7 +11,7 @@ import (
 func RegisterAuth(mux *http.ServeMux, authCtrl controller.AuthController, stores ...auth.IdentityStore) {
 	mux.HandleFunc("POST /api/auth/login", authCtrl.Login)
 
-	// This capability endpoint describes the live deterministic demo workflow.
+	// This capability endpoint describes the live tutor workflow.
 	var store auth.IdentityStore
 	if len(stores) > 0 {
 		store = stores[0]
@@ -20,7 +20,7 @@ func RegisterAuth(mux *http.ServeMux, authCtrl controller.AuthController, stores
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"agent":                  "TutorAgent",
-			"provider":               "deterministic demo adapter",
+			"provider":               "configured learning provider",
 			"runs_on":                "student tutor turns",
 			"plan_steps":             []string{"load authorized context", "read progress", "filter published sources", "generate response", "validate response"},
 			"read_only_tools":        []string{"read_course_context", "read_student_progress", "read_published_materials"},

@@ -54,7 +54,7 @@ func TestOpenAICompatibleGatewayAcceptsFencedJSONAndReportsErrors(t *testing.T) 
 
 	gateway.BaseURL = server.URL + "/error"
 	_, err = gateway.Respond(context.Background(), repository.LearningRequest{})
-	if err == nil || !strings.Contains(err.Error(), "upstream unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "status 502") || strings.Contains(err.Error(), "upstream unavailable") {
 		t.Fatalf("error = %v", err)
 	}
 }

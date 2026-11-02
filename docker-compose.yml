@@ -26,6 +26,12 @@ services:
       - "8080:8080"
     environment:
       - PORT=8080
+      - API_KEY=${API_KEY:-}
+      - COLEARN_AI_API_KEY=${COLEARN_AI_API_KEY:-}
+      - COLEARN_AI_PROVIDER=${COLEARN_AI_PROVIDER:-}
+      - COLEARN_AI_MODEL=${COLEARN_AI_MODEL:-}
+      - COLEARN_AI_BASE_URL=${COLEARN_AI_BASE_URL:-}
+      - COLEARN_AI_TIMEOUT_SECONDS=${COLEARN_AI_TIMEOUT_SECONDS:-}
     volumes:
       - learning-data:/app/data
     restart: unless-stopped

@@ -389,11 +389,12 @@ func (c LearningController) SendStudentTurn(w http.ResponseWriter, r *http.Reque
 		Message:   message,
 	})
 	if err != nil {
+		const message = "Your tutor is temporarily unavailable. Your message is saved; submit it again to retry."
 		if r.Header.Get("HX-Request") != "" {
-			c.renderTurnError(w, r, err.Error())
+			c.renderTurnError(w, r, message)
 			return
 		}
-		http.Redirect(w, r, workspaceLocation(sessionID, "", err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, workspaceLocation(sessionID, "", message), http.StatusSeeOther)
 		return
 	}
 
@@ -433,11 +434,12 @@ func (c LearningController) CheckStudentUnderstanding(w http.ResponseWriter, r *
 	}
 	_, err := c.student.CheckUnderstanding(r.Context(), sessionID, studentID)
 	if err != nil {
+		const message = "The understanding check could not be completed. Please try again."
 		if r.Header.Get("HX-Request") != "" {
-			c.renderTurnError(w, r, err.Error())
+			c.renderTurnError(w, r, message)
 			return
 		}
-		http.Redirect(w, r, workspaceLocation(r.FormValue("session_id"), "", err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, workspaceLocation(r.FormValue("session_id"), "", message), http.StatusSeeOther)
 		return
 	}
 	workspace, err := c.workspaceView(r.Context(), studentID, sessionID, domain.TutorMode(r.FormValue("mode")))
@@ -678,7 +680,7 @@ func (c LearningController) SendStudentTurnJSON(w http.ResponseWriter, r *http.R
 	}
 	result, err := c.student.Continue(r.Context(), req)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err)
+		writeAPIError(w, http.StatusBadGateway, errors.New("tutor is temporarily unavailable; retry the same message"))
 		return
 	}
 	writeJSON(w, http.StatusOK, toAPITurnResult(result))
@@ -700,7 +702,7 @@ func (c LearningController) CheckStudentUnderstandingJSON(w http.ResponseWriter,
 	}
 	check, err := c.student.CheckUnderstanding(r.Context(), sessionID, studentID)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err)
+		writeAPIError(w, http.StatusBadGateway, errors.New("understanding check is temporarily unavailable"))
 		return
 	}
 	writeJSON(w, http.StatusCreated, toAPICheck(check))

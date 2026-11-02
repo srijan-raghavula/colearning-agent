@@ -1,7 +1,9 @@
 # ==============================================================================
 # Build Stage
 # ==============================================================================
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
+
+RUN apk add --no-cache build-base
 
 WORKDIR /app
 
@@ -11,16 +13,16 @@ COPY go.mod ./
 # Copy source directory
 COPY src/ ./src/
 
-# Build statically-linked executable binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o colearning-agent ./src/cmd/api
+# Build the SQLite-backed executable with CGO enabled.
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o colearning-agent ./src/cmd/api
 
 # ==============================================================================
 # Final Runtime Stage
 # ==============================================================================
-FROM alpine:3.20
+FROM alpine:3.22
 
 # Install basic runtime utilities for security certificates and healthchecks
-RUN apk add --no-cache ca-certificates tzdata wget
+RUN apk add --no-cache ca-certificates tzdata wget libgcc
 
 # Create non-root system user and group
 RUN addgroup -g 10001 -S appgroup && \

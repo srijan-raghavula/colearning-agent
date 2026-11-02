@@ -61,13 +61,4 @@ func main() {
 		log.Printf("HTTP server stopped with error: %v", err)
 	}
 
-	// After the listener stops, flush the durable learning snapshot so the
-	// final state is never lost to an abrupt exit.
-	if app.Persist != nil {
-		log.Println("flushing durable learning snapshot...")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		app.Persist(ctx)
-		log.Println("durable learning snapshot flushed")
-	}
 }

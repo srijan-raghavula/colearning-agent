@@ -12,21 +12,21 @@ CoLearn is a teacher-grounded human–AI co-learning application. The primary st
 - User stories: [`planning/user-stories.md`](planning/user-stories.md)
 - Feature plans: [`planning/features/`](planning/features/)
 
-## Current vertical slice
+## Application capabilities
 
-The first slice is intentionally thin but demonstrable:
+The application includes:
 
 - one seeded teacher-owned course
 - four ordered concepts with objectives and provenance-aware materials
 - resumable student learning sessions and tutor turns
 - guided, Socratic, direct, practice, hint, and diagnostic modes
-- deterministic provider-neutral tutor gateway
+- configurable OpenAI-compatible tutor, formative-check, and curriculum gateways with a deterministic local fallback
 - concept progress and next-action read models
 - polished student dashboard and learning space
 - teacher class dashboard and content studio
 - server-rendered HTML and versioned JSON API surfaces
 
-Accounts, course content, learning sessions, turns, and agent execution records use SQLite. Progress and formative-check read models use the durable snapshot store. Signed account identity controls student and teacher route access; the seeded demo accounts remain available for local review.
+Accounts, course content, learning sessions, turns, progress, formative checks, and agent execution records use SQLite. Existing learning snapshot files are imported idempotently when SQLite is missing records. Signed account identity controls student and teacher route access, including course ownership and enrollment checks.
 
 ## Project structure
 
@@ -76,7 +76,7 @@ Set `COLEARN_DEMO_ACCOUNTS=false` before deployment to disable the seeded demo p
 
 ### AI provider
 
-The local default is the deterministic `stub` provider. To connect an OpenAI-compatible model, set `COLEARN_AI_PROVIDER=openai-compatible`, `COLEARN_AI_API_KEY`, and `COLEARN_AI_MODEL`; optionally set `COLEARN_AI_BASE_URL` (defaults to `https://api.openai.com/v1`) and `COLEARN_AI_TIMEOUT_SECONDS` (defaults to 45). The agent sends grounded course context and accepts only the typed tutor response contract; provider failures are returned explicitly rather than silently falling back.
+The application loads `.env` from the project root without replacing environment variables already set by the process. Put the provider key in `API_KEY=...`; `COLEARN_AI_API_KEY` remains supported and takes precedence. A Groq key is routed to Groq’s OpenAI-compatible endpoint with the current `openai/gpt-oss-120b` model default. Other keys use OpenAI’s endpoint and `gpt-4o-mini` by default. Set `COLEARN_AI_BASE_URL` and `COLEARN_AI_MODEL` to override those defaults for another compatible provider. `COLEARN_AI_TIMEOUT_SECONDS` defaults to 45. Without a key, local startup uses the deterministic stub adapter. Provider failures are returned without exposing provider response bodies to students. Never commit `.env`; Docker Compose receives values from its normal `.env` interpolation.
 
 ### Docker and containerization
 
@@ -123,4 +123,4 @@ They are not linked from the co-learning product UI.
 
 ## Production follow-up
 
-Before deployment, replace the demo accounts, add a bounded source-ingestion adapter, connect a real model provider behind `LearningAgentGateway`, and expand the optional understanding checker with production rubric/provider versioning. Add rate limits, provider timeouts, and privacy controls as part of that integration. Course enrollment and teacher ownership checks are implemented in the current slice. The agent planner and formative-checker run through the learning workflow and write execution records to SQLite; the configured tutor and check providers are deterministic demo adapters. The original requirement document should remain unchanged as the source requirement record.
+Before deployment, disable seeded demo passwords, configure a stable JWT secret and HTTPS cookies, and add operational controls such as rate limits, backups, monitoring, and privacy/retention policies. The app supports configured model-backed tutor, formative-check, and curriculum workflows; without a key it uses deterministic local adapters. Course enrollment and teacher ownership checks are enforced in the application. The original requirement document remains unchanged as the source requirement record.
