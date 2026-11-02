@@ -26,6 +26,12 @@ The application includes:
 - teacher class dashboard and content studio
 - server-rendered HTML and versioned JSON API surfaces
 
+The primary product UI is now a standalone JavaScript frontend. It is served as
+an application shell from `src/frontend`, authenticates through the JSON
+session endpoints, and renders student and teacher workspaces from `/api/v1`.
+The older template controllers remain available internally for compatibility
+and migration safety, but are no longer the primary browser route.
+
 Accounts, course content, learning sessions, turns, progress, formative checks, and agent execution records use SQLite. Existing learning snapshot files are imported idempotently when SQLite is missing records. Signed account identity controls student and teacher route access, including course ownership and enrollment checks.
 
 ## Project structure
@@ -44,7 +50,8 @@ src/
   repository/                  # persistence and provider ports
   routes/                      # route registration and identity-based role middleware
   service/                     # tutor response policy and legacy evaluator
-  templates/                   # server-rendered HTML and shared CSS
+  frontend/                    # standalone SPA shell, browser JavaScript, and CSS
+  templates/                   # legacy server-rendered views retained for compatibility
   usecase/                     # student/teacher learning workflows
   view/                        # buffered template rendering
 planning/                      # product flow, stories, and feature plans
@@ -64,6 +71,8 @@ go run ./src/cmd/api
 Open:
 
 - `http://localhost:8080/` — product landing page
+- `http://localhost:8080/app/student` — standalone JavaScript student app
+- `http://localhost:8080/app/teacher` — standalone JavaScript teacher app
 - `http://localhost:8080/login` — sign in with the demo student or teacher account
 - `http://localhost:8080/signup` — create a persistent student or teacher account
 - `http://localhost:8080/profile` — view the signed-in account
@@ -76,7 +85,7 @@ Set `COLEARN_DEMO_ACCOUNTS=false` before deployment to disable the seeded demo p
 
 ### AI provider
 
-The application loads `.env` from the project root without replacing environment variables already set by the process. Put the provider key in `API_KEY=...`; `COLEARN_AI_API_KEY` remains supported and takes precedence. A Groq key is routed to Groq’s OpenAI-compatible endpoint with the current `openai/gpt-oss-120b` model default. Other keys use OpenAI’s endpoint and `gpt-4o-mini` by default. Set `COLEARN_AI_BASE_URL` and `COLEARN_AI_MODEL` to override those defaults for another compatible provider. `COLEARN_AI_TIMEOUT_SECONDS` defaults to 45. Without a key, local startup uses the deterministic stub adapter. Provider failures are returned without exposing provider response bodies to students. Never commit `.env`; Docker Compose receives values from its normal `.env` interpolation.
+The application loads `.env` from the project root without replacing environment variables already set by the process. Put the Groq provider key in the canonical `API_KEY=...` variable; the older `COLEARN_AI_API_KEY` name remains a compatibility fallback. A Groq key is routed to Groq’s OpenAI-compatible endpoint with the current `openai/gpt-oss-120b` model default. Other keys use OpenAI’s endpoint and `gpt-4o-mini` by default. Set `COLEARN_AI_PROVIDER`, `COLEARN_AI_BASE_URL`, and `COLEARN_AI_MODEL` to override those defaults for another compatible provider. `COLEARN_AI_TIMEOUT_SECONDS` defaults to 45. Without a key, local startup uses the deterministic stub adapter. Provider failures are returned without exposing provider response bodies to students. Never commit `.env`; Docker Compose receives values from its normal `.env` interpolation. See [`.env.example`](.env.example).
 
 ### Docker and containerization
 

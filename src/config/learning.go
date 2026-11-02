@@ -86,25 +86,30 @@ func LoadAI() AI {
 			timeout = time.Duration(seconds) * time.Second
 		}
 	}
-	provider := os.Getenv("COLEARN_AI_PROVIDER")
-	apiKey := envOr("COLEARN_AI_API_KEY", os.Getenv("API_KEY"))
+	provider := strings.ToLower(strings.TrimSpace(os.Getenv("COLEARN_AI_PROVIDER")))
+	// API_KEY is the canonical provider credential. Keep the older name as a
+	// compatibility fallback for existing deployments.
+	apiKey := strings.TrimSpace(os.Getenv("API_KEY"))
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("COLEARN_AI_API_KEY"))
+	}
 	baseURL := os.Getenv("COLEARN_AI_BASE_URL")
 	model := os.Getenv("COLEARN_AI_MODEL")
 	if provider == "" {
 		provider = "stub"
 		if apiKey != "" {
-			provider = "openai-compatible"
+			provider = "groq"
 		}
 	}
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
-		if strings.HasPrefix(strings.TrimSpace(apiKey), "gsk_") {
+		if provider == "groq" || strings.HasPrefix(apiKey, "gsk_") {
 			baseURL = "https://api.groq.com/openai/v1"
 		}
 	}
 	if model == "" {
 		model = "gpt-4o-mini"
-		if strings.HasPrefix(strings.TrimSpace(apiKey), "gsk_") {
+		if provider == "groq" || strings.HasPrefix(apiKey, "gsk_") {
 			model = "openai/gpt-oss-120b"
 		}
 	}
@@ -115,11 +120,4 @@ func LoadAI() AI {
 		Model:    model,
 		Timeout:  timeout,
 	}
-}
-
-func envOr(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
 }

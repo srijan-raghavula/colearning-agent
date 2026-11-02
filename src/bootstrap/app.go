@@ -332,7 +332,7 @@ func NewApp() (App, error) {
 	var curriculumGatewayImpl agentic.CurriculumAuthoringGateway = memory.NewStubCurriculumAuthoringGateway()
 	switch aiConfig.Provider {
 	case "stub":
-	case "openai", "openai-compatible":
+	case "groq", "openai", "openai-compatible":
 		provider := &llm.OpenAICompatibleGateway{
 			BaseURL: aiConfig.BaseURL,
 			APIKey:  aiConfig.APIKey,

@@ -1,5 +1,5 @@
 # ── Co-Learning Agent ────────────────────────────────────────────────────────
-# Go 1.24 project. Source lives under src/; templates are embedded by path
+# Go 1.26 project. Source lives under src/; templates are embedded by path
 # (src/templates), so run/serve targets execute from the repo root.
 #
 # Cheatsheet below in `make help`.
