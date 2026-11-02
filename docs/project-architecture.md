@@ -197,7 +197,7 @@ Current adapters:
 - deterministic `StubFormativeCheckGateway`
 - server-rendered templates with a shared CSS token system
 
-Production follow-up includes course enrollment and teacher ownership checks, rate limits, source fetching/normalization, and a real model provider. Source content must be treated as untrusted input and cannot override tutor instructions.
+Course enrollment and teacher ownership checks are implemented in the current slice. Production follow-up includes rate limits, source fetching/normalization, and a real model provider. Source content must be treated as untrusted input and cannot override tutor instructions.
 
 ## HTTP surface
 
@@ -234,7 +234,7 @@ POST /api/v1/teacher/materials
 PUT  /api/v1/teacher/courses/{course_id}/tutor-policy
 ```
 
-The current middleware uses a query parameter or `X-Role` header only to make the demo runnable. A real authentication adapter must replace this before deployment; client-supplied student IDs must not be treated as authority in production.
+Role access comes from the signed account identity. The server resolves each authenticated request against the account store, and learning routes derive the student identity from that account rather than trusting client-supplied IDs.
 
 ## UI architecture
 
@@ -286,7 +286,7 @@ flowchart TB
     Env[PORT and provider configuration] --> Binary
 ```
 
-The first slice intentionally uses process-local memory so the UI and API can be reviewed without introducing a database migration. A durable adapter can replace the memory repositories without changing the browser or JSON contract.
+Accounts, courses, curriculum, sessions, turns, and agent execution records use SQLite. Progress, evidence, and formative checks use a durable snapshot store. The deterministic tutor and formative-check providers keep local review self-contained; external retrieval and production model calls remain follow-up integrations.
 
 ## Compatibility and migration
 
@@ -303,12 +303,14 @@ This separation is intentional. It lets the new UI and API contract stabilize be
 
 ## Current limitations and next steps
 
-1. Replace demo role/student identity with authenticated actors and ownership checks.
-2. Add durable database repositories behind the existing ports.
-3. Add a bounded external-source fetcher with URL, redirect, size, and content normalization controls.
-4. Add a real LLM adapter and citation verification behind `LearningAgentGateway`.
-5. Add provider/versioned rubric policy to the optional understanding check.
-6. Add authorization tests for every teacher, student, and session endpoint.
-7. Add browser-level tests for the account flow, responsive dashboard shell, and post/redirect/get conversation flow.
+Account identity is signed and resolved against the current SQLite account record. Password updates increment an account token version so other sessions stop working. Teacher courses and student enrollment access are checked on the relevant routes. The current account and course workflows are implemented in this repository; remaining work is production hardening rather than those foundational features.
+
+Curriculum edits are saved as a validated whole-course draft. Removed modules, chapters, lessons, and lesson content are archived, excluded from the live outline and tutor context, and retained for read-only access to existing learning history.
+
+1. Add a bounded external-source fetcher with URL, redirect, size, and content normalization controls.
+2. Add a real LLM adapter and citation verification behind `LearningAgentGateway`.
+3. Add provider/versioned rubric policy to the optional understanding check.
+4. Add rate limits, provider timeouts, and production privacy controls.
+5. Add browser-level tests for account interactions, responsive layouts, and conversation workflows.
 
 The problem statement remains unchanged as the original requirement record. Product interpretation and implementation decisions live in this document and the API/UI documentation.

@@ -37,6 +37,10 @@ func initials(name string) string {
 }
 
 func (r *Renderer) Render(w http.ResponseWriter, name string, data any) {
+	// Every rendered page is a live view over account, enrollment, course, and
+	// learning state. Prevent browsers and intermediaries from replaying an old
+	// HTML snapshot after a successful POST/redirect/GET update.
+	w.Header().Set("Cache-Control", "no-store")
 	var body bytes.Buffer
 	if err := r.templates.ExecuteTemplate(&body, name, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

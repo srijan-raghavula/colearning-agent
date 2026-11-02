@@ -21,10 +21,12 @@ func NewRepo(db *sql.DB) *SQLiteRepo {
 }
 
 func (r *SQLiteRepo) FindCourse(ctx context.Context, id string) (domain.LearningCourse, bool, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT id,title,subject,description,teacher_id,tutor_policy_json,next_concept_id FROM courses WHERE id=?`, id)
+	row := r.db.QueryRowContext(ctx, `SELECT c.id,c.title,c.subject,c.description,c.teacher_id,c.tutor_policy_json,c.next_concept_id,
+		(SELECT count(*) FROM course_enrollments e WHERE e.course_id=c.id AND e.status='approved')
+		FROM courses c WHERE c.id=?`, id)
 	var c domain.LearningCourse
 	var tpJSON, next string
-	if err := row.Scan(&c.ID, &c.Title, &c.Subject, &c.Description, &c.TeacherID, &tpJSON, &next); err == sql.ErrNoRows {
+	if err := row.Scan(&c.ID, &c.Title, &c.Subject, &c.Description, &c.TeacherID, &tpJSON, &next, &c.StudentCount); err == sql.ErrNoRows {
 		return c, false, nil
 	} else if err != nil {
 		return c, false, err
@@ -35,7 +37,9 @@ func (r *SQLiteRepo) FindCourse(ctx context.Context, id string) (domain.Learning
 }
 
 func (r *SQLiteRepo) ListCourses(ctx context.Context) ([]domain.LearningCourse, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,title,subject,description,teacher_id,tutor_policy_json,next_concept_id FROM courses ORDER BY title`)
+	rows, err := r.db.QueryContext(ctx, `SELECT c.id,c.title,c.subject,c.description,c.teacher_id,c.tutor_policy_json,c.next_concept_id,
+		(SELECT count(*) FROM course_enrollments e WHERE e.course_id=c.id AND e.status='approved')
+		FROM courses c ORDER BY c.title`)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +48,7 @@ func (r *SQLiteRepo) ListCourses(ctx context.Context) ([]domain.LearningCourse, 
 	for rows.Next() {
 		var c domain.LearningCourse
 		var tpJSON, next string
-		if err := rows.Scan(&c.ID, &c.Title, &c.Subject, &c.Description, &c.TeacherID, &tpJSON, &next); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &c.Subject, &c.Description, &c.TeacherID, &tpJSON, &next, &c.StudentCount); err != nil {
 			return nil, err
 		}
 		c.NextConceptID = next
@@ -63,20 +67,22 @@ func (r *SQLiteRepo) SaveCourse(ctx context.Context, course domain.LearningCours
 }
 
 func (r *SQLiteRepo) FindConcept(ctx context.Context, id string) (domain.LearningConcept, bool, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT id,course_id,title,summary,level,"order",estimated_minutes,prerequisites_json FROM concepts WHERE id=?`, id)
+	row := r.db.QueryRowContext(ctx, `SELECT id,course_id,title,summary,level,"order",estimated_minutes,prerequisites_json,archived FROM concepts WHERE id=?`, id)
 	var c domain.LearningConcept
 	var prereqJSON string
-	if err := row.Scan(&c.ID, &c.CourseID, &c.Title, &c.Summary, &c.Level, &c.Order, &c.EstimatedMinutes, &prereqJSON); err == sql.ErrNoRows {
+	var archived int
+	if err := row.Scan(&c.ID, &c.CourseID, &c.Title, &c.Summary, &c.Level, &c.Order, &c.EstimatedMinutes, &prereqJSON, &archived); err == sql.ErrNoRows {
 		return c, false, nil
 	} else if err != nil {
 		return c, false, err
 	}
 	_ = json.Unmarshal([]byte(prereqJSON), &c.PrerequisiteIDs)
+	c.Archived = archived == 1
 	return c, true, nil
 }
 
 func (r *SQLiteRepo) ListConcepts(ctx context.Context, courseID string) ([]domain.LearningConcept, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,course_id,title,summary,level,"order",estimated_minutes,prerequisites_json FROM concepts WHERE course_id=? ORDER BY "order"`, courseID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,course_id,title,summary,level,"order",estimated_minutes,prerequisites_json FROM concepts WHERE course_id=? AND archived=0 ORDER BY "order"`, courseID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +103,7 @@ func (r *SQLiteRepo) ListConcepts(ctx context.Context, courseID string) ([]domai
 func (r *SQLiteRepo) SaveConcept(ctx context.Context, concept domain.LearningConcept) error {
 	prereqJSON, _ := json.Marshal(concept.PrerequisiteIDs)
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO concepts(id,course_id,title,summary,level,"order",estimated_minutes,prerequisites_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET course_id=excluded.course_id,title=excluded.title,summary=excluded.summary,level=excluded.level,"order"=excluded."order",estimated_minutes=excluded.estimated_minutes,prerequisites_json=excluded.prerequisites_json`,
+		`INSERT INTO concepts(id,course_id,title,summary,level,"order",estimated_minutes,prerequisites_json,archived) VALUES(?,?,?,?,?,?,?,?,0) ON CONFLICT(id) DO UPDATE SET course_id=excluded.course_id,title=excluded.title,summary=excluded.summary,level=excluded.level,"order"=excluded."order",estimated_minutes=excluded.estimated_minutes,prerequisites_json=excluded.prerequisites_json,archived=0`,
 		concept.ID, concept.CourseID, concept.Title, concept.Summary, concept.Level, concept.Order, concept.EstimatedMinutes, string(prereqJSON))
 	return err
 }
@@ -508,7 +514,9 @@ func (r *SQLiteRepo) UserFindByEmail(ctx context.Context, email string) (map[str
 }
 
 func (r *SQLiteRepo) UserCreate(ctx context.Context, id, email, hash, role, name string) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO users(id,email,password_hash,role,name) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,password_hash=excluded.password_hash,role=excluded.role,name=excluded.name`, id, email, hash, role, name)
+	// This is a seed operation, not an account update. Preserve profile and
+	// credential changes made after the account was first created.
+	_, err := r.db.ExecContext(ctx, `INSERT INTO users(id,email,password_hash,role,name) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, id, email, hash, role, name)
 	return err
 }
 
@@ -519,7 +527,7 @@ func (r *SQLiteRepo) CreateAccount(ctx context.Context, account auth.Account) er
 
 func (r *SQLiteRepo) FindAccountByEmail(ctx context.Context, email string) (auth.Account, bool, error) {
 	var account auth.Account
-	err := r.db.QueryRowContext(ctx, `SELECT id,email,password_hash,role,name FROM users WHERE email=?`, email).Scan(&account.ID, &account.Email, &account.PasswordHash, &account.Role, &account.Name)
+	err := r.db.QueryRowContext(ctx, `SELECT id,email,password_hash,role,name,academic_program,branch,semester,academic_year,department,teaching_title,auth_version FROM users WHERE email=?`, email).Scan(&account.ID, &account.Email, &account.PasswordHash, &account.Role, &account.Name, &account.AcademicProgram, &account.Branch, &account.Semester, &account.AcademicYear, &account.Department, &account.TeachingTitle, &account.AuthVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return auth.Account{}, false, nil
 	}
@@ -531,7 +539,7 @@ func (r *SQLiteRepo) FindAccountByEmail(ctx context.Context, email string) (auth
 
 func (r *SQLiteRepo) FindAccountByID(ctx context.Context, id string) (auth.Account, bool, error) {
 	var account auth.Account
-	err := r.db.QueryRowContext(ctx, `SELECT id,email,password_hash,role,name FROM users WHERE id=?`, id).Scan(&account.ID, &account.Email, &account.PasswordHash, &account.Role, &account.Name)
+	err := r.db.QueryRowContext(ctx, `SELECT id,email,password_hash,role,name,academic_program,branch,semester,academic_year,department,teaching_title,auth_version FROM users WHERE id=?`, id).Scan(&account.ID, &account.Email, &account.PasswordHash, &account.Role, &account.Name, &account.AcademicProgram, &account.Branch, &account.Semester, &account.AcademicYear, &account.Department, &account.TeachingTitle, &account.AuthVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return auth.Account{}, false, nil
 	}
@@ -539,6 +547,117 @@ func (r *SQLiteRepo) FindAccountByID(ctx context.Context, id string) (auth.Accou
 		return auth.Account{}, false, err
 	}
 	return account, true, nil
+}
+
+// UpdateAccountPassword changes the password only when the previously read
+// password hash still matches, and invalidates every earlier signed session.
+func (r *SQLiteRepo) UpdateAccountPassword(ctx context.Context, id, expectedHash, newHash string) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE users SET password_hash=?,auth_version=auth_version+1 WHERE id=? AND password_hash=?`, newHash, id, expectedHash)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return errors.New("password changed while this form was open; reload and try again")
+	}
+	return nil
+}
+
+func (r *SQLiteRepo) UpdateAccountProfile(ctx context.Context, account auth.Account) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE users SET name=?,academic_program=?,branch=?,semester=?,academic_year=?,department=?,teaching_title=? WHERE id=?`, account.Name, account.AcademicProgram, account.Branch, account.Semester, account.AcademicYear, account.Department, account.TeachingTitle, account.ID)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *SQLiteRepo) RequestCourseEnrollment(ctx context.Context, studentID, courseID string) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO course_enrollments(student_id,course_id,status) VALUES(?,?,'pending')
+		ON CONFLICT(student_id,course_id) DO UPDATE SET
+		status=CASE WHEN course_enrollments.status='denied' THEN 'pending' ELSE course_enrollments.status END,
+		requested_at=CASE WHEN course_enrollments.status='denied' THEN CURRENT_TIMESTAMP ELSE course_enrollments.requested_at END,
+		reviewed_at=CASE WHEN course_enrollments.status='denied' THEN NULL ELSE course_enrollments.reviewed_at END,
+		reviewed_by=CASE WHEN course_enrollments.status='denied' THEN NULL ELSE course_enrollments.reviewed_by END`, studentID, courseID)
+	return err
+}
+
+func (r *SQLiteRepo) FindCourseEnrollment(ctx context.Context, studentID, courseID string) (domain.CourseEnrollment, bool, error) {
+	rows, err := r.listEnrollments(ctx, `WHERE e.student_id=? AND e.course_id=?`, studentID, courseID)
+	if err != nil {
+		return domain.CourseEnrollment{}, false, err
+	}
+	if len(rows) == 0 {
+		return domain.CourseEnrollment{}, false, nil
+	}
+	return rows[0], true, nil
+}
+
+func (r *SQLiteRepo) ListStudentEnrollments(ctx context.Context, studentID string) ([]domain.CourseEnrollment, error) {
+	return r.listEnrollments(ctx, `WHERE e.student_id=? ORDER BY c.title`, studentID)
+}
+
+func (r *SQLiteRepo) ListTeacherEnrollmentRequests(ctx context.Context, teacherID string) ([]domain.CourseEnrollment, error) {
+	return r.listEnrollments(ctx, `WHERE c.teacher_id=? AND e.status='pending' ORDER BY e.requested_at`, teacherID)
+}
+
+func (r *SQLiteRepo) ReviewCourseEnrollment(ctx context.Context, studentID, courseID, teacherID string, status domain.EnrollmentStatus) error {
+	if status != domain.EnrollmentApproved && status != domain.EnrollmentDenied {
+		return errors.New("invalid enrollment decision")
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE course_enrollments SET status=?,reviewed_at=CURRENT_TIMESTAMP,reviewed_by=?
+		WHERE student_id=? AND course_id=? AND status='pending' AND course_id IN (SELECT id FROM courses WHERE teacher_id=?)`, status, teacherID, studentID, courseID, teacherID)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return errors.New("pending enrollment request not found for this teacher")
+	}
+	return nil
+}
+
+func (r *SQLiteRepo) EnsureApprovedEnrollment(ctx context.Context, studentID, courseID string) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO course_enrollments(student_id,course_id,status) VALUES(?,?,'approved') ON CONFLICT(student_id,course_id) DO NOTHING`, studentID, courseID)
+	return err
+}
+
+func (r *SQLiteRepo) listEnrollments(ctx context.Context, filter string, args ...any) ([]domain.CourseEnrollment, error) {
+	query := `SELECT e.student_id,COALESCE(s.name,''),COALESCE(s.email,''),e.course_id,c.title,c.subject,c.description,c.teacher_id,COALESCE(t.name,''),COALESCE(t.email,''),COALESCE(t.teaching_title,''),COALESCE(t.department,''),e.status,e.requested_at,e.reviewed_at
+		FROM course_enrollments e JOIN users s ON s.id=e.student_id JOIN courses c ON c.id=e.course_id JOIN users t ON t.id=c.teacher_id ` + filter
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var enrollments []domain.CourseEnrollment
+	for rows.Next() {
+		var item domain.CourseEnrollment
+		var status string
+		var reviewed sql.NullTime
+		if err := rows.Scan(&item.StudentID, &item.StudentName, &item.StudentEmail, &item.CourseID, &item.CourseTitle, &item.Subject, &item.Description, &item.TeacherID, &item.TeacherName, &item.TeacherEmail, &item.TeacherTitle, &item.TeacherDepartment, &status, &item.RequestedAt, &reviewed); err != nil {
+			return nil, err
+		}
+		item.Status = domain.EnrollmentStatus(status)
+		if reviewed.Valid {
+			reviewedAt := reviewed.Time
+			item.ReviewedAt = &reviewedAt
+		}
+		enrollments = append(enrollments, item)
+	}
+	return enrollments, rows.Err()
 }
 
 // Implement repository interfaces with SQLiteRepo

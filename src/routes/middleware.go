@@ -8,31 +8,38 @@ import (
 	"github.com/srijan-raghavula/colearning-agent/src/auth"
 )
 
-func roleRequired(role string, next http.HandlerFunc) http.HandlerFunc {
+func roleRequired(role string, next http.HandlerFunc, stores ...auth.IdentityStore) http.HandlerFunc {
 	return requireRole(next, func(requestRole string) bool {
 		return requestRole == role
-	}, "forbidden: wrong role", false)
+	}, "forbidden: wrong role", false, firstIdentityStore(stores))
 }
 
-func apiRoleRequired(role string, next http.HandlerFunc) http.HandlerFunc {
+func apiRoleRequired(role string, next http.HandlerFunc, stores ...auth.IdentityStore) http.HandlerFunc {
 	return requireRole(next, func(requestRole string) bool {
 		return requestRole == role
-	}, "forbidden: wrong role", true)
+	}, "forbidden: wrong role", true, firstIdentityStore(stores))
 }
 
 // teacherRoleRequired keeps the product vocabulary (teacher) while accepting
 // the existing faculty role used by the legacy assessment endpoints.
-func teacherRoleRequired(next http.HandlerFunc) http.HandlerFunc {
-	return requireRole(next, isTeacherRole, "forbidden: teacher role required", false)
+func teacherRoleRequired(next http.HandlerFunc, stores ...auth.IdentityStore) http.HandlerFunc {
+	return requireRole(next, isTeacherRole, "forbidden: teacher role required", false, firstIdentityStore(stores))
 }
 
-func apiTeacherRoleRequired(next http.HandlerFunc) http.HandlerFunc {
-	return requireRole(next, isTeacherRole, "forbidden: teacher role required", true)
+func apiTeacherRoleRequired(next http.HandlerFunc, stores ...auth.IdentityStore) http.HandlerFunc {
+	return requireRole(next, isTeacherRole, "forbidden: teacher role required", true, firstIdentityStore(stores))
 }
 
-func requireRole(next http.HandlerFunc, accepts func(string) bool, message string, api bool) http.HandlerFunc {
+func firstIdentityStore(stores []auth.IdentityStore) auth.IdentityStore {
+	if len(stores) == 0 {
+		return nil
+	}
+	return stores[0]
+}
+
+func requireRole(next http.HandlerFunc, accepts func(string) bool, message string, api bool, store auth.IdentityStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		identity, err := auth.IdentityFromRequest(r)
+		identity, err := auth.IdentityFromRequestWithStore(r, store)
 		if err != nil {
 			if api || strings.HasPrefix(r.URL.Path, "/api/") {
 				writeAPIError(w, http.StatusUnauthorized, "authentication required")
@@ -53,9 +60,9 @@ func requireRole(next http.HandlerFunc, accepts func(string) bool, message strin
 	}
 }
 
-func authenticated(next http.HandlerFunc) http.HandlerFunc {
+func authenticated(next http.HandlerFunc, stores ...auth.IdentityStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		identity, err := auth.IdentityFromRequest(r)
+		identity, err := auth.IdentityFromRequestWithStore(r, firstIdentityStore(stores))
 		if err != nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return

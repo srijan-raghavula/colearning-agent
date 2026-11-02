@@ -1,0 +1,49 @@
+{{define "student/course.html"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Course.Title}} · CoLearn</title>
+  <link rel="stylesheet" href="/static/assets/app.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/student"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Student workspace</span></span></a>
+      <nav class="main-nav"><a href="/student">Overview</a><a class="active" href="/student/courses">Courses</a></nav>
+      <div class="topbar-spacer"></div>
+      <details class="account-menu">
+        <summary aria-label="Account menu for {{.Identity.Name}}"><span class="avatar">{{initials .Identity.Name}}</span><span class="account-menu-name">{{.Identity.Name}}</span><span class="account-menu-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="account-popover"><div class="account-popover-heading">Signed in as<strong>{{.Identity.Name}}</strong></div><a href="/profile">View full profile</a><a class="account-signout" href="/logout">Sign out</a></div>
+      </details>
+    </header>
+    <main class="page page-narrow">
+      <a class="btn btn-quiet" href="/student/courses">← Back to courses</a>
+      <section class="card card-pad course-detail-card mt-16">
+        <div class="eyebrow">{{.Course.Subject}}</div><h1 class="page-title">{{.Course.Title}}</h1><p class="page-lede">{{.Course.Description}}</p>
+        <div class="course-facts mt-24"><span>{{.Course.ConceptCount}} concepts</span><span>{{.Course.StudentCount}} learners</span><span>{{.Course.TutorPolicy.DefaultMode.Label}} tutor style</span></div>
+      </section>
+      <section class="card card-pad mt-24">
+        <div class="card-header"><div><h2 class="card-title">Your teacher</h2><p class="card-subtitle">Contact and course ownership details</p></div><span class="avatar coral">{{initials .TeacherName}}</span></div>
+        <div class="profile-details"><div class="profile-row"><span class="context-label">Teacher</span><strong>{{.TeacherName}}</strong></div><div class="profile-row"><span class="context-label">Academic title</span><strong>{{if .TeacherTitle}}{{.TeacherTitle}}{{else}}Not provided{{end}}</strong></div><div class="profile-row"><span class="context-label">Department</span><strong>{{if .TeacherDepartment}}{{.TeacherDepartment}}{{else}}Not provided{{end}}</strong></div><div class="profile-row"><span class="context-label">Email</span><strong>{{if .TeacherEmail}}{{.TeacherEmail}}{{else}}Not provided{{end}}</strong></div><div class="profile-row"><span class="context-label">Course subject</span><strong>{{.Course.Subject}}</strong></div></div>
+      </section>
+      <section class="card card-pad mt-24">
+        <div class="card-header"><div><h2 class="card-title">Course outline</h2><p class="card-subtitle">{{.Course.ConceptCount}} learning lessons in this course</p></div></div>
+        <div class="course-outline-list">
+          {{range .Modules}}<article class="course-outline-module"><strong>Module {{.Module.Order}} · {{.Module.Title}}</strong><p>{{.Module.Description}}</p>{{range .Chapters}}<div class="course-outline-chapter"><span>Chapter {{.Chapter.Order}} · {{.Chapter.Title}}</span><ul>{{range .Lessons}}<li>{{.Lesson.Title}}{{if .Lesson.Summary}} — {{.Lesson.Summary}}{{end}}</li>{{else}}<li>Lessons are being prepared.</li>{{end}}</ul></div>{{else}}<p class="muted small">Chapters are being prepared.</p>{{end}}</article>{{else}}<div class="conversation-empty"><strong>Course outline is being prepared</strong><span>The teacher will publish modules and lessons here.</span></div>{{end}}
+        </div>
+        {{if and .HasEnrollment (eq .Enrollment.Status "approved") (gt .Course.ConceptCount 0)}}<a class="btn btn-primary mt-16" href="/student/workspace?course_id={{.Course.ID}}">Open this course in learning space <span>→</span></a>{{end}}
+      </section>
+      <section class="card card-pad mt-24">
+        <div class="card-header"><div><h2 class="card-title">Enrollment</h2><p class="card-subtitle">The teacher reviews requests before course access is granted.</p></div>{{if .HasEnrollment}}<span class="badge {{if eq .Enrollment.Status "approved"}}badge-teal{{else if eq .Enrollment.Status "pending"}}badge-amber{{else}}badge-coral{{end}}">{{.Enrollment.Status}}</span>{{end}}</div>
+        {{if not .HasEnrollment}}<form method="post" action="/student/courses/{{.Course.ID}}/enroll"><button class="btn btn-primary" type="submit">Request enrollment</button></form>
+        {{else if eq .Enrollment.Status "denied"}}<p class="muted small">Your previous request was declined. You may submit a new request for review.</p><form method="post" action="/student/courses/{{.Course.ID}}/enroll"><button class="btn btn-secondary" type="submit">Request again</button></form>
+        {{else if eq .Enrollment.Status "pending"}}<p class="muted">Your request is waiting for {{.TeacherName}} to review it.</p>
+        {{else}}<p class="muted">You are enrolled in this course. It is now listed on your profile.</p>{{end}}
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+{{end}}

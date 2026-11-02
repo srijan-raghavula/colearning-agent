@@ -1,0 +1,8 @@
+{{define "faculty/navigation.html"}}
+<nav class="main-nav" aria-label="Teacher workspace">
+  <a href="/teacher" {{if eq .ActiveNav "overview"}}class="active" aria-current="page"{{end}}>Class overview</a>
+  <a href="/teacher/courses" {{if eq .ActiveNav "courses"}}class="active" aria-current="page"{{end}}>My courses</a>
+  <a href="/teacher/content" {{if eq .ActiveNav "content"}}class="active" aria-current="page"{{end}}>Content studio</a>
+  <a href="/teacher/enrollments" {{if eq .ActiveNav "enrollments"}}class="active" aria-current="page"{{end}}>Enrollment studio</a>
+</nav>
+{{end}}

@@ -8,11 +8,15 @@ import (
 	"github.com/srijan-raghavula/colearning-agent/src/controller"
 )
 
-func RegisterAuth(mux *http.ServeMux, authCtrl controller.AuthController) {
+func RegisterAuth(mux *http.ServeMux, authCtrl controller.AuthController, stores ...auth.IdentityStore) {
 	mux.HandleFunc("POST /api/auth/login", authCtrl.Login)
 
 	// This capability endpoint describes the live deterministic demo workflow.
-	mux.HandleFunc("GET /api/agentic/tutor-plan", auth.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	var store auth.IdentityStore
+	if len(stores) > 0 {
+		store = stores[0]
+	}
+	mux.HandleFunc("GET /api/agentic/tutor-plan", auth.AuthMiddlewareWithStore(store, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"agent":                  "TutorAgent",

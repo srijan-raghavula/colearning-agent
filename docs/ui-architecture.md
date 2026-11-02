@@ -25,7 +25,7 @@ The first screen answers four questions:
 1. What should I continue?
 2. How confident am I?
 3. What concept comes next?
-4. What context is the tutor using?
+4. Which lesson should I continue?
 
 Primary regions:
 
@@ -33,8 +33,8 @@ Primary regions:
 - learning metrics
 - ordered concept path
 - recent conversation activity
-- source/context library
-- teacher and tutor-policy summary
+- course enrollment summary
+- teacher identity
 
 ### Learning space (`/student/workspace`)
 
@@ -47,11 +47,14 @@ The workspace is intentionally transcript-first.
 - explicit empty state before the first turn
 - turn composer with a normal HTML form fallback
 - optional understanding-check action and formative feedback panel
-- sticky learning brief with goal, sources, and next action
+- keyboard-accessible Conversation and Sources & goals tabs
+- optional learning brief with the current lesson goal, tutor mode, source provenance, and next action
 
 The UI does not expose raw prompt payloads, evaluator scores, or internal confidence calculations as grades. `ConceptProgress.Confidence` is labeled as a learning signal.
 
 ## Teacher surfaces
+
+All teacher pages use the same server-rendered navigation for Class overview, My courses, Content studio, and Enrollment studio. Page-specific actions should not duplicate those destinations unless they provide a distinct task, such as creating a course.
 
 ### Class dashboard (`/teacher`)
 
@@ -77,6 +80,12 @@ The content studio is the teacher control plane for the first slice.
 - default tutor mode
 - allowed tutor modes
 - external-source policy
+
+### Courses and enrollment (`/teacher/courses`, `/teacher/enrollments`)
+
+- teacher-owned course creation and editing
+- curriculum editing for each course
+- student enrollment request review
 
 ## Required states
 

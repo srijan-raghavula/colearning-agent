@@ -1,0 +1,104 @@
+{{define "faculty/curriculum.html"}}
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.Course.Title}} curriculum · CoLearn</title><link rel="stylesheet" href="/static/assets/app.css"></head>
+<body><div class="shell">
+  <header class="topbar">
+    <a class="brand" href="/teacher"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Teacher workspace</span></span></a>
+    {{template "faculty/navigation.html" .}}<div class="topbar-spacer"></div>
+    <details class="account-menu"><summary aria-label="Account menu for {{.Identity.Name}}"><span class="avatar coral">{{initials .Identity.Name}}</span><span class="account-menu-name">{{.Identity.Name}}</span><span class="account-menu-chevron" aria-hidden="true">⌄</span></summary><div class="account-popover"><div class="account-popover-heading">Signed in as<strong>{{.Identity.Name}}</strong></div><a href="/profile">View full profile</a><a class="account-signout" href="/logout">Sign out</a></div></details>
+  </header>
+  <main class="page">
+    {{if .Notice}}<div class="alert alert-success" role="status">{{.Notice}}</div>{{end}}
+    {{if .Error}}<div class="alert alert-error" role="alert">{{.Error}}</div>{{end}}
+    <section class="page-heading"><div><div class="eyebrow">{{.Course.Subject}} · Course builder</div><h1 class="page-title">{{.Course.Title}}</h1><p class="page-lede">Edit the full outline as a draft. Save applies every change together; discard reloads the last saved version.</p></div><div class="page-actions"><a class="btn btn-secondary" href="/teacher/courses/{{.Course.ID}}">Edit course details</a><a class="btn btn-secondary" href="/teacher/courses">All courses</a></div></section>
+    {{if .CanGenerate}}<section class="card card-pad authoring-card"><div><span class="badge badge-blue">Curriculum authoring agent</span><h2 class="card-title mt-16">Draft a complete starter outline</h2><p class="card-subtitle">The demo provider proposes modules, chapters, lessons, and unpublished content. Review the draft, then save your changes.</p></div><form method="post" action="/teacher/courses/{{.Course.ID}}/curriculum/generate"><button class="btn btn-primary" type="submit">Generate starter draft <span>✦</span></button></form><p class="small muted authoring-note">Deterministic demo provider; no external AI model is called.</p></section>{{end}}
+
+    <form id="curriculum-form" class="curriculum-tree mt-24" method="post" action="/teacher/courses/{{.Course.ID}}/curriculum/save" data-course-id="{{.Course.ID}}">
+      <input type="hidden" name="draft" id="curriculum-payload">
+      <section class="card card-pad curriculum-create"><div class="card-header"><div><h2 class="card-title">Course outline</h2><p class="card-subtitle">Modules contain chapters; chapters contain lessons; lesson content is assigned to one lesson.</p></div><button type="button" class="btn btn-secondary btn-sm" data-add="module">＋ Add module</button></div></section>
+      <div id="module-list" class="curriculum-tree">
+      {{range .Modules}}
+        <article class="card curriculum-module draft-node" data-node="module" data-id="{{.Module.ID}}">
+          <div class="curriculum-node-heading"><span class="curriculum-order">Module</span><div class="page-actions"><button type="button" class="btn btn-secondary btn-sm" data-add="chapter">＋ Add chapter</button><button type="button" class="btn btn-quiet btn-sm" data-remove>Remove module</button></div></div>
+          <div class="form-grid"><div class="form-field"><label>Module title</label><input class="input" data-field="title" maxlength="160" required value="{{.Module.Title}}"></div><div class="form-field"><label>Description (optional)</label><input class="input" data-field="description" maxlength="3000" value="{{.Module.Description}}"></div></div>
+          <div class="curriculum-children chapter-list">
+          {{range .Chapters}}
+            <section class="curriculum-chapter draft-node" data-node="chapter" data-id="{{.Chapter.ID}}" data-parent="{{.Chapter.ModuleID}}">
+              <div class="curriculum-node-heading"><span class="curriculum-order">Chapter</span><div class="page-actions"><button type="button" class="btn btn-secondary btn-sm" data-add="lesson">＋ Add lesson</button><button type="button" class="btn btn-quiet btn-sm" data-remove>Remove chapter</button></div></div>
+              <div class="form-grid"><div class="form-field"><label>Chapter title</label><input class="input" data-field="title" maxlength="160" required value="{{.Chapter.Title}}"></div><div class="form-field"><label>Description (optional)</label><input class="input" data-field="description" maxlength="3000" value="{{.Chapter.Description}}"></div></div>
+              <div class="curriculum-lessons lesson-list">
+              {{range .Lessons}}
+                <article class="lesson-editor draft-node" data-node="lesson" data-id="{{.Lesson.ID}}" data-parent="{{.Lesson.ChapterID}}">
+                  <div class="curriculum-node-heading"><span class="curriculum-order">Lesson</span><div class="page-actions"><button type="button" class="btn btn-secondary btn-sm" data-add="content">＋ Add lesson content</button><button type="button" class="btn btn-quiet btn-sm" data-remove>Remove lesson</button></div></div>
+                  <div class="form-grid"><div class="form-field"><label>Lesson title</label><input class="input" data-field="title" maxlength="160" required value="{{.Lesson.Title}}"></div><div class="form-field"><label>Learning goal (optional)</label><input class="input" data-field="summary" maxlength="3000" value="{{.Lesson.Summary}}"></div></div>
+                  <div class="lesson-content-list content-list">
+                  {{range .Content}}
+                    <section class="lesson-content-editor draft-node" data-node="content" data-id="{{.ID}}" data-parent="{{.LessonID}}"><div class="curriculum-node-heading"><span class="curriculum-order">Lesson content</span><div class="page-actions"><span class="badge {{if .Published}}badge-teal{{else}}badge-amber{{end}}">{{if .Published}}Published{{else}}Draft{{end}}</span><button type="button" class="btn btn-quiet btn-sm" data-remove>Remove content</button></div></div><div class="form-grid"><div class="form-field"><label>Content title</label><input class="input" data-field="title" maxlength="200" required value="{{.Title}}"></div><div class="form-field"><label>Content type</label><select class="select" data-field="kind"><option value="lesson_note" {{if eq .Kind "lesson_note"}}selected{{end}}>Lesson note</option><option value="example" {{if eq .Kind "example"}}selected{{end}}>Worked example</option><option value="activity" {{if eq .Kind "activity"}}selected{{end}}>Activity</option><option value="reference" {{if eq .Kind "reference"}}selected{{end}}>Reference</option></select></div><div class="form-field full"><label>Content</label><textarea class="textarea" data-field="body" maxlength="12000" rows="5" required>{{.Body}}</textarea></div><div class="form-field full"><label class="check-row"><input type="checkbox" data-field="published" {{if .Published}}checked{{end}}> Publish to tutor context for this lesson</label></div></div></section>
+                  {{end}}
+                  </div>
+                </article>
+              {{end}}
+              </div>
+            </section>
+          {{end}}
+          </div>
+        </article>
+      {{end}}
+      </div>
+      <div class="curriculum-savebar"><span class="tiny muted">Removed items are archived on save; existing learner history stays available.</span><a class="btn btn-secondary" href="/teacher/courses/{{.Course.ID}}/curriculum">Discard changes</a><button class="btn btn-primary" type="submit">Save changes</button></div>
+    </form>
+  </main>
+</div>
+<script>
+(() => {
+  const form = document.getElementById('curriculum-form');
+  const moduleList = document.getElementById('module-list');
+  const id = () => 'draft-' + crypto.randomUUID();
+  const node = (kind, parent, fields, children = '') => {
+    const el = document.createElement(kind === 'module' ? 'article' : kind === 'chapter' ? 'section' : kind === 'lesson' ? 'article' : 'section');
+    el.className = kind === 'module' ? 'card curriculum-module draft-node' : kind === 'chapter' ? 'curriculum-chapter draft-node' : kind === 'lesson' ? 'lesson-editor draft-node' : 'lesson-content-editor draft-node';
+    el.dataset.node = kind; el.dataset.id = id(); if (parent) el.dataset.parent = parent;
+    const labels = {module:['Module','chapter'],chapter:['Chapter','lesson'],lesson:['Lesson','content']};
+    if (kind === 'content') {
+      el.innerHTML = '<div class="curriculum-node-heading"><span class="curriculum-order">Lesson content</span><button type="button" class="btn btn-quiet btn-sm" data-remove>Remove content</button></div><div class="form-grid"><div class="form-field"><label>Content title</label><input class="input" data-field="title" maxlength="200" required></div><div class="form-field"><label>Content type</label><select class="select" data-field="kind"><option value="lesson_note">Lesson note</option><option value="example">Worked example</option><option value="activity">Activity</option><option value="reference">Reference</option></select></div><div class="form-field full"><label>Content</label><textarea class="textarea" data-field="body" maxlength="12000" rows="5" required></textarea></div><div class="form-field full"><label class="check-row"><input type="checkbox" data-field="published"> Publish to tutor context for this lesson</label></div></div>';
+      return el;
+    }
+    const [label, child] = labels[kind];
+    const heading = document.createElement('div'); heading.className='curriculum-node-heading';
+    const headingLabel=document.createElement('span'); headingLabel.className='curriculum-order'; headingLabel.textContent=label; heading.append(headingLabel);
+    const actions=document.createElement('div'); actions.className='page-actions';
+    const add=document.createElement('button'); add.type='button'; add.className='btn btn-secondary btn-sm'; add.dataset.add=child; add.textContent='＋ Add '+child;
+    const remove=document.createElement('button'); remove.type='button'; remove.className='btn btn-quiet btn-sm'; remove.dataset.remove=''; remove.textContent='Remove '+kind;
+    actions.append(add,remove); heading.append(actions);
+    el.append(heading);
+    const grid = document.createElement('div'); grid.className='form-grid';
+    const title = document.createElement('input'); title.className='input'; title.dataset.field='title'; title.maxLength= kind==='module'||kind==='chapter'||kind==='lesson' ? 160 : 200; title.required=true;
+    const titleField=document.createElement('div'); titleField.className='form-field'; titleField.innerHTML='<label>'+label+' title</label>'; titleField.append(title); grid.append(titleField);
+    const field = document.createElement('input'); field.className='input'; field.dataset.field = kind==='lesson' ? 'summary' : 'description'; field.maxLength=3000;
+    const descField=document.createElement('div'); descField.className='form-field'; descField.innerHTML='<label>'+(kind==='lesson'?'Learning goal':'Description')+' (optional)</label>'; descField.append(field); grid.append(descField); el.append(grid);
+    const list=document.createElement('div'); list.className=kind==='module'?'curriculum-children chapter-list':kind==='chapter'?'curriculum-lessons lesson-list':'lesson-content-list content-list'; el.append(list); return el;
+  };
+  form.addEventListener('click', event => {
+    const remove=event.target.closest('[data-remove]');
+    if(remove) { if(confirm('Remove this item from the saved course? Existing learner history will stay available.')) remove.closest('[data-node]').remove(); return; }
+    const button=event.target.closest('[data-add]'); if(!button) return;
+    const owner=button.closest('[data-node]'); const kind=button.dataset.add;
+    const parent=owner ? owner.dataset.id : '';
+    const target=owner ? owner.querySelector(kind==='chapter'?'.chapter-list':kind==='lesson'?'.lesson-list':'.content-list') : moduleList;
+    target.append(node(kind,parent));
+  });
+  form.addEventListener('submit', event => {
+    const read=(kind) => [...form.querySelectorAll('[data-node="'+kind+'"]')].map(el => {
+      const item={id:el.dataset.id}; if(el.dataset.parent) item[kind==='chapter'?'module_id':kind==='lesson'?'chapter_id':'lesson_id']=el.dataset.parent;
+      for(const field of el.querySelectorAll('[data-field]')) item[field.dataset.field]=field.type==='checkbox'?field.checked:field.value.trim();
+      return item;
+    });
+    document.getElementById('curriculum-payload').value=JSON.stringify({modules:read('module'),chapters:read('chapter'),lessons:read('lesson'),contents:read('content')});
+    event.preventDefault();
+    fetch(form.action,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:document.getElementById('curriculum-payload').value,credentials:'same-origin'}).then(response=>{if(response.redirected) location.assign(response.url); else location.reload();}).catch(()=>{form.submit();});
+  });
+})();
+</script>
+</body></html>
+{{end}}

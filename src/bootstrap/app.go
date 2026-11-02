@@ -185,6 +185,19 @@ func NewApp() (App, error) {
 		if err := sqlRepo.UserCreate(context.Background(), "T-001", "teacher@demo.edu", teacherHash, "teacher", "Maya Chen"); err != nil {
 			return App{}, fmt.Errorf("seed demo teacher account: %w", err)
 		}
+		if teacherAccount, found, findErr := sqlRepo.FindAccountByID(context.Background(), "T-001"); findErr != nil {
+			return App{}, fmt.Errorf("load demo teacher profile: %w", findErr)
+		} else if found && (teacherAccount.TeachingTitle == "" || teacherAccount.Department == "") {
+			if teacherAccount.TeachingTitle == "" {
+				teacherAccount.TeachingTitle = "Assistant Professor"
+			}
+			if teacherAccount.Department == "" {
+				teacherAccount.Department = "Mathematics"
+			}
+			if err := sqlRepo.UpdateAccountProfile(context.Background(), teacherAccount); err != nil {
+				return App{}, fmt.Errorf("seed demo teacher teaching profile: %w", err)
+			}
+		}
 		secondaryPassword, passErr := seedPassword("", false)
 		if passErr != nil {
 			return App{}, fmt.Errorf("prepare learner profile seed: %w", passErr)
@@ -239,6 +252,11 @@ func NewApp() (App, error) {
 					_ = db.Close()
 					return App{}, fmt.Errorf("seed material %q: %w", m.ID, err)
 				}
+			}
+		}
+		for _, studentID := range []string{"S-001", "S-002"} {
+			if err := sqlRepo.EnsureApprovedEnrollment(context.Background(), studentID, course.ID); err != nil {
+				return App{}, fmt.Errorf("seed enrollment for %q: %w", studentID, err)
 			}
 		}
 		for _, session := range sessions {
@@ -311,6 +329,7 @@ func NewApp() (App, error) {
 		Agent:  &agentic.TutorAgent{Gateway: memory.NewStubLearningAgentGateway()},
 		Logger: agentLogger,
 	}
+	curriculumAuthoring := agentic.CurriculumAuthoringAgent{Gateway: memory.NewStubCurriculumAuthoringGateway(), Logger: agentLogger}
 	learningAgent := service.NewTutorAgent(learningGateway)
 	formativeGateway := agentic.FormativeChecker{Gateway: memory.NewStubFormativeCheckGateway(), Logger: agentLogger}
 	understandingChecker := service.NewUnderstandingCheckService(formativeGateway)
@@ -332,12 +351,15 @@ func NewApp() (App, error) {
 	app := App{
 		Config: httpConfig,
 		Routes: routes.Dependencies{
-			Health:   controller.NewHealthController(),
-			Student:  controller.NewStudentController(studentPortal, renderer),
-			Faculty:  controller.NewFacultyController(facultyPortal, renderer),
-			Learning: controller.NewLearningController(studentLearningPortal, teacherLearningPortal, renderer).WithAccountLookup(sqlRepo),
-			Renderer: renderer,
-			Accounts: accounts,
+			Health:      controller.NewHealthController(),
+			Student:     controller.NewStudentController(studentPortal, renderer),
+			Faculty:     controller.NewFacultyController(facultyPortal, renderer),
+			Learning:    controller.NewLearningController(studentLearningPortal, teacherLearningPortal, renderer).WithAccountLookup(sqlRepo).WithEnrollmentStore(sqlRepo).WithCourseCatalog(sqlRepo),
+			Courses:     controller.NewCourseController(renderer, contentRepo, sqlRepo, sqlRepo, sqlRepo),
+			Curriculum:  controller.NewCurriculumController(renderer, sqlRepo, sqlRepo, contentRepo, curriculumAuthoring),
+			Enrollments: sqlRepo,
+			Renderer:    renderer,
+			Accounts:    accounts,
 		},
 		Persist: appPersist,
 		Close: func() error {

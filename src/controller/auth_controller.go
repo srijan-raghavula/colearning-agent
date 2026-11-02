@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -11,19 +12,41 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/srijan-raghavula/colearning-agent/src/auth"
+	"github.com/srijan-raghavula/colearning-agent/src/domain"
 	"github.com/srijan-raghavula/colearning-agent/src/view"
 )
 
 type AuthController struct {
-	renderer *view.Renderer
-	accounts auth.UserStore
+	renderer        *view.Renderer
+	accounts        auth.UserStore
+	profileStore    accountProfileStore
+	credentialStore accountCredentialStore
+	enrollments     CourseEnrollmentStore
+}
+
+type accountProfileStore interface {
+	FindAccountByID(context.Context, string) (auth.Account, bool, error)
+	UpdateAccountProfile(context.Context, auth.Account) error
+}
+
+type accountCredentialStore interface {
+	UpdateAccountPassword(context.Context, string, string, string) error
 }
 
 func NewAuthController(renderer *view.Renderer, accounts auth.UserStore) AuthController {
-	return AuthController{renderer: renderer, accounts: accounts}
+	controller := AuthController{renderer: renderer, accounts: accounts}
+	controller.profileStore, _ = accounts.(accountProfileStore)
+	controller.credentialStore, _ = accounts.(accountCredentialStore)
+	return controller
+}
+
+func (c AuthController) WithEnrollmentStore(store CourseEnrollmentStore) AuthController {
+	c.enrollments = store
+	return c
 }
 
 func (c AuthController) LoginPage(w http.ResponseWriter, r *http.Request) {
@@ -252,9 +275,13 @@ func setAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
 }
 
 func (c AuthController) Logout(w http.ResponseWriter, r *http.Request) {
+	clearAuthCookie(w, r)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func clearAuthCookie(w http.ResponseWriter, r *http.Request) {
 	secure := r.TLS != nil || strings.EqualFold(os.Getenv("COLEARN_COOKIE_SECURE"), "true")
 	http.SetCookie(w, &http.Cookie{Name: "auth_token", Value: "", Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (c AuthController) ProfilePage(w http.ResponseWriter, r *http.Request) {
@@ -263,6 +290,148 @@ func (c AuthController) ProfilePage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
+	if c.profileStore == nil {
+		http.Error(w, "Profile service is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	account, found, err := c.profileStore.FindAccountByID(r.Context(), identity.ID)
+	if err != nil {
+		http.Error(w, "Could not load profile", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+	var enrollments []domain.CourseEnrollment
+	if account.Role == "student" && c.enrollments != nil {
+		enrollments, err = c.enrollments.ListStudentEnrollments(r.Context(), account.ID)
+		if err != nil {
+			http.Error(w, "Could not load course enrollments", http.StatusInternalServerError)
+			return
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	c.renderer.Render(w, "app/profile.html", identity)
+	c.renderer.Render(w, "app/profile.html", map[string]any{
+		"Account":     account,
+		"Enrollments": enrollments,
+		"Role":        account.Role,
+		"Notice":      r.URL.Query().Get("notice"),
+		"Error":       r.URL.Query().Get("error"),
+	})
+}
+
+func (c AuthController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	identity, ok := auth.IdentityFromContext(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if c.profileStore == nil {
+		http.Error(w, "Profile service is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/profile?error=Invalid+profile+form", http.StatusSeeOther)
+		return
+	}
+	account, found, err := c.profileStore.FindAccountByID(r.Context(), identity.ID)
+	if err != nil || !found {
+		http.Error(w, "Could not load account", http.StatusInternalServerError)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	program := strings.TrimSpace(r.FormValue("academic_program"))
+	branch := strings.TrimSpace(r.FormValue("branch"))
+	academicYear := strings.TrimSpace(r.FormValue("academic_year"))
+	department := strings.TrimSpace(r.FormValue("department"))
+	teachingTitle := strings.TrimSpace(r.FormValue("teaching_title"))
+	semester := 0
+	semesterValue := strings.TrimSpace(r.FormValue("semester"))
+	var parseErr error
+	if semesterValue != "" {
+		semester, parseErr = strconv.Atoi(semesterValue)
+	}
+	if name == "" || len([]rune(name)) > 100 || len([]rune(program)) > 120 || len([]rune(branch)) > 120 || len([]rune(academicYear)) > 40 || len([]rune(department)) > 120 || len([]rune(teachingTitle)) > 80 || parseErr != nil || semester < 0 || semester > 20 {
+		http.Redirect(w, r, "/profile?error=Check+your+profile+details+and+try+again", http.StatusSeeOther)
+		return
+	}
+	account.Name = name
+	account.AcademicProgram = program
+	account.Branch = branch
+	account.Semester = semester
+	account.AcademicYear = academicYear
+	account.Department = department
+	account.TeachingTitle = teachingTitle
+	if err := c.profileStore.UpdateAccountProfile(r.Context(), account); err != nil {
+		http.Error(w, "Could not save profile", http.StatusInternalServerError)
+		return
+	}
+	token, err := auth.GenerateToken(account.ID, account.Role, account.Email, account.Name, account.AuthVersion)
+	if err != nil {
+		http.Error(w, "Profile saved but session could not be refreshed", http.StatusInternalServerError)
+		return
+	}
+	setAuthCookie(w, r, token)
+	http.Redirect(w, r, "/profile?notice=Profile+saved", http.StatusSeeOther)
+}
+
+func (c AuthController) UpdatePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	identity, ok := auth.IdentityFromContext(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if c.profileStore == nil || c.credentialStore == nil {
+		http.Redirect(w, r, "/profile?error="+url.QueryEscape("Password service is unavailable"), http.StatusSeeOther)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/profile?error="+url.QueryEscape("Invalid password form"), http.StatusSeeOther)
+		return
+	}
+	account, found, err := c.profileStore.FindAccountByID(r.Context(), identity.ID)
+	if err != nil || !found {
+		http.Redirect(w, r, "/profile?error="+url.QueryEscape("Could not verify your account"), http.StatusSeeOther)
+		return
+	}
+	current := r.FormValue("current_password")
+	password := r.FormValue("new_password")
+	confirmation := r.FormValue("confirm_password")
+	if !auth.CheckPassword(account.PasswordHash, current) {
+		http.Redirect(w, r, "/profile?error="+url.QueryEscape("Current password is incorrect"), http.StatusSeeOther)
+		return
+	}
+	if len(password) < 8 || len(password) > 72 || password != confirmation || password == current {
+		http.Redirect(w, r, "/profile?error="+url.QueryEscape("Choose a new password (8 to 72 characters) and enter it the same way twice"), http.StatusSeeOther)
+		return
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		http.Redirect(w, r, "/profile?error="+url.QueryEscape("Could not secure the new password"), http.StatusSeeOther)
+		return
+	}
+	if err := c.credentialStore.UpdateAccountPassword(r.Context(), account.ID, account.PasswordHash, hash); err != nil {
+		http.Redirect(w, r, "/profile?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	account.AuthVersion++
+	token, err := auth.GenerateToken(account.ID, account.Role, account.Email, account.Name, account.AuthVersion)
+	if err != nil {
+		clearAuthCookie(w, r)
+		http.Redirect(w, r, "/login?notice="+url.QueryEscape("Password changed. Sign in with your new password."), http.StatusSeeOther)
+		return
+	}
+	setAuthCookie(w, r, token)
+	http.Redirect(w, r, "/profile?notice="+url.QueryEscape("Password updated. Other sessions were signed out."), http.StatusSeeOther)
 }

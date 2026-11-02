@@ -106,6 +106,7 @@ type LearningConcept struct {
 	Order            int      `json:"order"`
 	EstimatedMinutes int      `json:"estimated_minutes"`
 	PrerequisiteIDs  []string `json:"prerequisite_ids,omitempty"`
+	Archived         bool     `json:"archived,omitempty"`
 }
 
 type LearningObjective struct {

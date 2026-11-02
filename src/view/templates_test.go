@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,9 +49,12 @@ func TestProductTemplatesRender(t *testing.T) {
 	student := testLearningDashboard()
 	teacher := testTeacherDashboard()
 	workspace := map[string]any{
-		"Dashboard":    student,
-		"Session":      student.ActiveSession,
-		"Turns":        student.Turns,
+		"Dashboard": student,
+		"Session":   student.ActiveSession,
+		"Turns": []domain.LearningTurn{
+			{ID: "student-turn", Role: domain.LearningTurnStudent, Mode: domain.TutorModeGuided, Body: "I think I can solve it."},
+			student.Turns[0],
+		},
 		"Concept":      student.FeaturedConcept,
 		"Materials":    student.Materials,
 		"SelectedMode": domain.TutorModeGuided,
@@ -60,11 +64,13 @@ func TestProductTemplatesRender(t *testing.T) {
 		data any
 	}{
 		{"app/landing.html", map[string]any{"Role": "guest"}},
-		{"student/dashboard.html", map[string]any{"Role": "student", "StudentID": student.StudentID, "Dashboard": student}},
+		{"student/dashboard.html", map[string]any{"Role": "student", "StudentID": student.StudentID, "Dashboard": student, "EnrolledCourses": []domain.CourseEnrollment{}, "ApprovedCourses": []domain.CourseEnrollment{}}},
 		{"student/workspace.html", map[string]any{"Role": "student", "StudentID": student.StudentID, "Workspace": workspace}},
 		{"student/workspace_conversation.html", map[string]any{"Role": "student", "StudentID": student.StudentID, "Workspace": workspace}},
-		{"faculty/dashboard.html", map[string]any{"Role": "teacher", "Dashboard": teacher}},
-		{"faculty/content.html", map[string]any{"Role": "teacher", "Dashboard": teacher}},
+		{"faculty/dashboard.html", map[string]any{"Role": "teacher", "ActiveNav": "overview", "Dashboard": teacher, "Courses": []domain.LearningCourse{teacher.Course}}},
+		{"faculty/content.html", map[string]any{"Role": "teacher", "ActiveNav": "content", "Identity": map[string]string{"Name": "Maya Chen"}, "Dashboard": teacher, "Courses": []domain.LearningCourse{teacher.Course}, "SelectedCourse": true, "MaterialRows": []any{}}},
+		{"faculty/enrollments.html", map[string]any{"ActiveNav": "enrollments", "Identity": map[string]string{"Name": "Maya Chen"}}},
+		{"faculty/courses.html", map[string]any{"ActiveNav": "courses", "Identity": map[string]string{"Name": "Maya Chen"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,8 +79,20 @@ func TestProductTemplatesRender(t *testing.T) {
 			if recorder.Code != 200 {
 				t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
 			}
+			if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+				t.Fatalf("Cache-Control = %q, want no-store", got)
+			}
 			if recorder.Body.Len() == 0 {
 				t.Fatal("expected rendered content")
+			}
+			if tc.name == "student/workspace_conversation.html" && (!strings.Contains(recorder.Body.String(), `class="message student"`) || !strings.Contains(recorder.Body.String(), `class="message tutor"`)) {
+				t.Fatal("conversation should distinguish student and tutor message sides")
+			}
+			if tc.name == "student/workspace.html" && (!strings.Contains(recorder.Body.String(), `role="tab"`) || !strings.Contains(recorder.Body.String(), `id="context-panel"`) || !strings.Contains(recorder.Body.String(), `aria-selected="false"`)) {
+				t.Fatal("learning space should render accessible conversation and sources/goals tabs")
+			}
+			if tc.name == "faculty/enrollments.html" && (!strings.Contains(recorder.Body.String(), `href="/teacher/courses"`) || !strings.Contains(recorder.Body.String(), "Enrollment studio")) {
+				t.Fatal("enrollment studio should retain the shared teacher navigation")
 			}
 		})
 	}

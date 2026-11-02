@@ -42,18 +42,32 @@ func CheckPassword(hash, password string) bool {
 }
 
 type Account struct {
-	ID           string
-	Email        string
-	PasswordHash string
-	Role         string
-	Name         string
+	ID              string
+	Email           string
+	PasswordHash    string
+	Role            string
+	Name            string
+	AcademicProgram string
+	Branch          string
+	Semester        int
+	AcademicYear    string
+	Department      string
+	TeachingTitle   string
+	AuthVersion     int
 }
 
 type Identity struct {
-	ID    string
-	Name  string
-	Email string
-	Role  string
+	ID          string
+	Name        string
+	Email       string
+	Role        string
+	AuthVersion int
+}
+
+// IdentityStore resolves signed identities against current account state and
+// lets security-sensitive changes revoke all previously issued tokens.
+type IdentityStore interface {
+	FindAccountByID(context.Context, string) (Account, bool, error)
 }
 
 type identityContextKey struct{}
@@ -87,9 +101,31 @@ func IdentityFromRequest(r *http.Request) (Identity, error) {
 		Email: claimString(claims, "email"),
 		Role:  claimString(claims, "role"),
 	}
+	if version, ok := claims["ver"].(float64); ok && version >= 1 {
+		identity.AuthVersion = int(version)
+	} else {
+		// Tokens created before versioned revocation remain valid as version 1.
+		identity.AuthVersion = 1
+	}
 	if identity.ID == "" || identity.Name == "" || identity.Email == "" || (identity.Role != "student" && identity.Role != "teacher" && identity.Role != "faculty") {
 		return Identity{}, errors.New("token does not contain a valid identity")
 	}
+	return identity, nil
+}
+
+func IdentityFromRequestWithStore(r *http.Request, store IdentityStore) (Identity, error) {
+	identity, err := IdentityFromRequest(r)
+	if err != nil || store == nil {
+		return identity, err
+	}
+	account, found, err := store.FindAccountByID(r.Context(), identity.ID)
+	if err != nil {
+		return Identity{}, err
+	}
+	if !found || account.AuthVersion != identity.AuthVersion || account.Role != identity.Role {
+		return Identity{}, errors.New("session has expired; sign in again")
+	}
+	identity.Name, identity.Email = account.Name, account.Email
 	return identity, nil
 }
 
@@ -126,14 +162,18 @@ func LoginWithStore(ctx context.Context, store UserStore, email, password string
 	if !found || !CheckPassword(account.PasswordHash, password) {
 		return nil, "", errors.New("invalid credentials")
 	}
-	token, err := GenerateToken(account.ID, account.Role, account.Email, account.Name)
+	token, err := GenerateToken(account.ID, account.Role, account.Email, account.Name, account.AuthVersion)
 	if err != nil {
 		return nil, "", err
 	}
 	return map[string]any{"user_id": account.ID, "email": account.Email, "role": account.Role, "name": account.Name}, token, nil
 }
 
-func GenerateToken(userID, role, email, name string) (string, error) {
+func GenerateToken(userID, role, email, name string, versions ...int) (string, error) {
+	version := 1
+	if len(versions) > 0 && versions[0] > 0 {
+		version = versions[0]
+	}
 	claims := jwt.MapClaims{
 		"sub":   userID,
 		"role":  role,
@@ -141,6 +181,7 @@ func GenerateToken(userID, role, email, name string) (string, error) {
 		"name":  name,
 		"exp":   time.Now().Add(24 * time.Hour).Unix(),
 		"iat":   time.Now().Unix(),
+		"ver":   version,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)
@@ -173,14 +214,19 @@ func ValidateToken(tokenString string) (map[string]any, error) {
 			"role":  role,
 			"email": email,
 			"name":  name,
+			"ver":   claims["ver"],
 		}, nil
 	}
 	return nil, errors.New("invalid token")
 }
 
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return AuthMiddlewareWithStore(nil, next)
+}
+
+func AuthMiddlewareWithStore(store IdentityStore, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		identity, err := IdentityFromRequest(r)
+		identity, err := IdentityFromRequestWithStore(r, store)
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="CoLearn"`)
 			http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)

@@ -11,19 +11,24 @@
   <div class="shell">
     <header class="topbar">
       <a class="brand" href="/teacher"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Teacher workspace</span></span></a>
-      <nav class="main-nav"><a class="active" href="/teacher">Class overview</a><a href="/teacher/content">Content studio</a><a href="/profile">Profile</a></nav>
-      <div class="topbar-spacer"></div><a class="topbar-account" href="/profile">Account</a>
-      <div class="topbar-meta"><span class="role-pill"><span class="role-dot"></span>Teacher mode</span><span class="avatar coral">{{initials .Dashboard.Course.TeacherName}}</span></div>
+      {{template "faculty/navigation.html" .}}
+      <div class="topbar-spacer"></div>
+      <div class="topbar-meta"><span class="role-pill"><span class="role-dot"></span>Teacher workspace</span></div>
+      <details class="account-menu">
+        <summary aria-label="Account menu for {{.Dashboard.Course.TeacherName}}"><span class="avatar coral">{{initials .Dashboard.Course.TeacherName}}</span><span class="account-menu-name">{{.Dashboard.Course.TeacherName}}</span><span class="account-menu-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="account-popover"><div class="account-popover-heading">Signed in as<strong>{{.Dashboard.Course.TeacherName}}</strong></div><a href="/profile">View full profile</a><a class="account-signout" href="/logout">Sign out</a></div>
+      </details>
     </header>
     <main class="page">
       {{if .Notice}}<div class="alert alert-success"><span>✓</span><span>{{.Notice}}</span></div>{{end}}
+      {{if .Dashboard.Course.ID}}
       <section class="page-heading">
         <div><div class="eyebrow">{{.Dashboard.Course.Subject}} · Teacher workspace</div><h1 class="page-title">See the learning behind the numbers.</h1><p class="page-lede">Shape the context your students learn from, then use concept progress to decide where your attention matters next.</p></div>
-        <div class="page-actions"><a class="btn btn-primary" href="/teacher/content">Open content studio <span>→</span></a></div>
+        {{if gt (len .Courses) 1}}<div class="page-actions"><form class="course-switcher" method="get" action="/teacher"><label for="teacher-course-switch">Course</label><select class="select" id="teacher-course-switch" name="course_id" onchange="this.form.requestSubmit()">{{range .Courses}}<option value="{{.ID}}" {{if eq .ID $.Dashboard.Course.ID}}selected{{end}}>{{.Title}}</option>{{end}}</select><noscript><button class="btn btn-secondary btn-sm" type="submit">Switch course</button></noscript></form></div>{{end}}
       </section>
 
       <section class="grid grid-4" style="margin-bottom:22px">
-        <div class="card metric"><div class="between"><span class="metric-label">Active learners</span><span class="metric-icon teal">◎</span></div><div class="metric-value">{{.Dashboard.Stats.ActiveLearners}}</div><div class="metric-note">Across this course</div></div>
+        <div class="card metric"><div class="between"><span class="metric-label">Enrolled learners</span><span class="metric-icon teal">◎</span></div><div class="metric-value">{{.Dashboard.Course.StudentCount}}</div><div class="metric-note">Approved course enrollments</div></div>
         <div class="card metric"><div class="between"><span class="metric-label">Concepts published</span><span class="metric-icon">✦</span></div><div class="metric-value">{{.Dashboard.Stats.ConceptsPublished}}</div><div class="metric-note">Available in tutor context</div></div>
         <div class="card metric"><div class="between"><span class="metric-label">Average confidence</span><span class="metric-icon coral">↗</span></div><div class="metric-value">{{.Dashboard.Stats.AverageConfidence}}%</div><div class="metric-note">Class concept signal</div></div>
         <div class="card metric"><div class="between"><span class="metric-label">Need support</span><span class="metric-icon amber">!</span></div><div class="metric-value">{{.Dashboard.Stats.NeedsSupport}}</div><div class="metric-note">Signals for your attention</div></div>
@@ -52,7 +57,6 @@
             <div class="support-list">
               {{range .Dashboard.SupportNeeded}}<div class="support-item"><span class="avatar {{if eq .StudentID "S-001"}}teal{{else}}coral{{end}}">{{initials (index $.StudentNames .StudentID)}}</span><div class="support-body"><div class="support-name">{{with index $.StudentNames .StudentID}}{{.}}{{else}}{{.StudentName}}{{end}}</div><div class="support-detail">{{.ConceptTitle}} · {{.NextAction}}</div></div><span class="support-score">{{.Confidence}}%</span></div>{{else}}<div class="conversation-empty" style="min-height:150px"><div class="empty-icon">✓</div><strong>No urgent signals</strong><span>Your class is in a steady rhythm.</span></div>{{end}}
             </div>
-            <a class="btn btn-secondary btn-block mt-16" href="/teacher/content">Review learning context</a>
           </article>
 
           <article class="card card-pad policy-card">
@@ -60,7 +64,6 @@
             <div class="policy-row"><span>Default mode</span><strong>{{.Dashboard.Policy.DefaultMode.Label}}</strong></div>
             <div class="policy-row"><span>External sources</span><span class="policy-toggle"><strong>{{if .Dashboard.Policy.AllowExternalSources}}Allowed{{else}}Off{{end}}</strong><span class="switch {{if not .Dashboard.Policy.AllowExternalSources}}off{{end}}"></span></span></div>
             <div class="policy-row"><span>Source policy</span><strong>{{.Dashboard.Policy.SourcePolicy}}</strong></div>
-            <a class="btn btn-primary btn-block mt-16" href="/teacher/content">Edit tutor policy <span>→</span></a>
           </article>
 
           <article class="card card-pad">
@@ -69,6 +72,9 @@
           </article>
         </aside>
       </section>
+      {{else}}
+      <section class="card card-pad conversation-empty"><div class="empty-icon">＋</div><strong>Create your first course to open the teaching workspace</strong><span>Courses and learner activity will appear here once you publish a course.</span><a class="btn btn-primary mt-16" href="/teacher/courses/new">Create a course</a></section>
+      {{end}}
     </main>
   </div>
 </body>

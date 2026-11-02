@@ -41,6 +41,13 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('student','teacher')),
     name TEXT,
+    academic_program TEXT NOT NULL DEFAULT '',
+    branch TEXT NOT NULL DEFAULT '',
+    semester INTEGER NOT NULL DEFAULT 0,
+    academic_year TEXT NOT NULL DEFAULT '',
+    department TEXT NOT NULL DEFAULT '',
+    teaching_title TEXT NOT NULL DEFAULT '',
+    auth_version INTEGER NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS courses (
@@ -61,9 +68,51 @@ CREATE TABLE IF NOT EXISTS concepts (
     level TEXT,
     "order" INTEGER DEFAULT 1,
     estimated_minutes INTEGER,
-    prerequisites_json TEXT DEFAULT '[]'
+    prerequisites_json TEXT DEFAULT '[]',
+    archived INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_concepts_course ON concepts(course_id);
+CREATE TABLE IF NOT EXISTS course_modules (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    "order" INTEGER NOT NULL DEFAULT 1,
+    archived INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_modules_course ON course_modules(course_id,"order");
+CREATE TABLE IF NOT EXISTS course_chapters (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    module_id TEXT NOT NULL REFERENCES course_modules(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    "order" INTEGER NOT NULL DEFAULT 1,
+    archived INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_chapters_module ON course_chapters(module_id,"order");
+CREATE TABLE IF NOT EXISTS course_lessons (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    chapter_id TEXT NOT NULL REFERENCES course_chapters(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    "order" INTEGER NOT NULL DEFAULT 1,
+    archived INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_lessons_chapter ON course_lessons(chapter_id,"order");
+CREATE TABLE IF NOT EXISTS lesson_contents (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    lesson_id TEXT NOT NULL REFERENCES course_lessons(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'lesson_note',
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    "order" INTEGER NOT NULL DEFAULT 1,
+    published INTEGER NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_lesson_contents_lesson ON lesson_contents(lesson_id,"order");
 CREATE TABLE IF NOT EXISTS objectives (
     id TEXT PRIMARY KEY,
     course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -96,6 +145,17 @@ CREATE TABLE IF NOT EXISTS learning_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_student ON learning_sessions(student_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_course ON learning_sessions(course_id);
+CREATE TABLE IF NOT EXISTS course_enrollments (
+    student_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('pending','approved','denied')) DEFAULT 'pending',
+    requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at DATETIME,
+    reviewed_by TEXT REFERENCES users(id),
+    PRIMARY KEY(student_id, course_id)
+);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course_status ON course_enrollments(course_id,status);
+CREATE INDEX IF NOT EXISTS idx_enrollments_student ON course_enrollments(student_id);
 CREATE TABLE IF NOT EXISTS learning_turns (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES learning_sessions(id) ON DELETE CASCADE,
@@ -160,6 +220,60 @@ CREATE TABLE IF NOT EXISTS agent_logs (
 CREATE INDEX IF NOT EXISTS idx_agent_logs_session ON agent_logs(session_id);
 CREATE INDEX IF NOT EXISTS idx_agent_logs_agent ON agent_logs(agent_name);
 `
-	_, err := db.Exec(schema)
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	// Existing local databases predate study-profile fields. Add each field
+	// safely so startup can upgrade those databases without discarding accounts.
+	for _, column := range []struct{ name, declaration string }{
+		{"academic_program", "TEXT NOT NULL DEFAULT ''"},
+		{"branch", "TEXT NOT NULL DEFAULT ''"},
+		{"semester", "INTEGER NOT NULL DEFAULT 0"},
+		{"academic_year", "TEXT NOT NULL DEFAULT ''"},
+		{"department", "TEXT NOT NULL DEFAULT ''"},
+		{"teaching_title", "TEXT NOT NULL DEFAULT ''"},
+		{"auth_version", "INTEGER NOT NULL DEFAULT 1"},
+	} {
+		if err := ensureColumn(db, "users", column.name, column.declaration); err != nil {
+			return err
+		}
+	}
+	for _, table := range []string{"concepts", "course_modules", "course_chapters", "course_lessons", "lesson_contents"} {
+		if err := ensureColumn(db, table, "archived", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureColumn(db *sql.DB, table, column, declaration string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + declaration)
 	return err
 }

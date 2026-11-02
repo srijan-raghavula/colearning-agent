@@ -1,0 +1,39 @@
+{{define "student/courses.html"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Course catalog · CoLearn</title>
+  <link rel="stylesheet" href="/static/assets/app.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/student"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Student workspace</span></span></a>
+      <nav class="main-nav"><a href="/student">Overview</a><a class="active" href="/student/courses">Courses</a></nav>
+      <div class="topbar-spacer"></div>
+      <details class="account-menu">
+        <summary aria-label="Account menu for {{.Identity.Name}}"><span class="avatar">{{initials .Identity.Name}}</span><span class="account-menu-name">{{.Identity.Name}}</span><span class="account-menu-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="account-popover"><div class="account-popover-heading">Signed in as<strong>{{.Identity.Name}}</strong></div><a href="/profile">View full profile</a><a class="account-signout" href="/logout">Sign out</a></div>
+      </details>
+    </header>
+    <main class="page">
+      {{if .Notice}}<div class="alert alert-success" role="status">{{.Notice}}</div>{{end}}
+      <section class="page-heading"><div><div class="eyebrow">Learning catalog</div><h1 class="page-title">Find your next course.</h1><p class="page-lede">Review the course outline and teacher details before you request enrollment.</p></div></section>
+      <section class="course-grid">
+        {{range .Courses}}
+        <article class="card course-card">
+          <div class="between"><span class="badge badge-blue">{{.Course.Subject}}</span>{{if .Enrollment}}<span class="badge {{if eq .Enrollment.Status "approved"}}badge-teal{{else if eq .Enrollment.Status "pending"}}badge-amber{{else}}badge-coral{{end}}">{{.Enrollment.Status}}</span>{{end}}</div>
+          <h2>{{.Course.Title}}</h2><p class="course-description">{{.Course.Description}}</p>
+          <div class="course-facts"><span>{{.Course.ConceptCount}} concepts</span><span>{{.Course.StudentCount}} learners</span></div>
+          <div class="course-teacher"><span class="avatar coral">{{initials .TeacherName}}</span><div><strong>{{.TeacherName}}</strong><span>{{if .TeacherTitle}}{{.TeacherTitle}}{{else}}Course teacher{{end}}{{if .TeacherDepartment}} · {{.TeacherDepartment}}{{end}}{{if .TeacherEmail}} · {{.TeacherEmail}}{{end}}</span></div></div>
+          <a class="btn btn-secondary btn-block mt-16" href="/student/courses/{{.Course.ID}}">View course details <span>→</span></a>
+        </article>
+        {{else}}<div class="card card-pad"><h2 class="card-title">No courses available</h2><p class="muted">Your teachers have not published any courses yet.</p></div>{{end}}
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+{{end}}

@@ -11,9 +11,13 @@
   <div class="shell">
     <header class="topbar">
       <a class="brand" href="/student"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Learning space</span></span></a>
-      <nav class="main-nav"><a href="/student">Overview</a><a class="active" href="/student/workspace">Learning space</a><a href="/profile">Profile</a></nav>
-      <div class="topbar-spacer"></div><a class="topbar-account" href="/profile">Account</a>
-      <div class="topbar-meta"><span class="role-pill"><span class="role-dot"></span>{{.Workspace.SelectedMode.Label}}</span><span class="avatar teal">{{initials .Workspace.Dashboard.StudentName}}</span></div>
+      <nav class="main-nav"><a href="/student">Overview</a><a href="/student/courses">Courses</a></nav>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-meta"><span class="role-pill"><span class="role-dot"></span>Tutor style · {{.Workspace.SelectedMode.Label}}</span></div>
+      <details class="account-menu">
+        <summary aria-label="Account menu for {{.Workspace.Dashboard.StudentName}}"><span class="avatar">{{initials .Workspace.Dashboard.StudentName}}</span><span class="account-menu-name">{{.Workspace.Dashboard.StudentName}}</span><span class="account-menu-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="account-popover"><div class="account-popover-heading">Signed in as<strong>{{.Workspace.Dashboard.StudentName}}</strong></div><a href="/profile">View full profile</a><a class="account-signout" href="/logout">Sign out</a></div>
+      </details>
     </header>
     <main class="page">
       {{if .Workspace.Notice}}<div class="alert alert-success"><span>✓</span><span>{{.Workspace.Notice}}</span></div>{{end}}
@@ -22,15 +26,15 @@
         <div><div class="eyebrow">{{.Workspace.Dashboard.Course.Title}} · Concept {{.Workspace.Concept.Order}}</div><h1 class="workspace-title">{{.Workspace.Concept.Title}}</h1><p class="page-lede">{{.Workspace.Concept.Summary}}</p></div>
         <div class="page-actions"><a class="btn btn-secondary" href="/student">← Back to overview</a></div>
       </div>
-      <div class="tabs"><a class="tab active" href="#conversation">Conversation</a><a class="tab" href="#context">Sources &amp; goal</a><span style="flex:1"></span><span class="badge badge-teal">{{.Workspace.Dashboard.FeaturedProgress.Percent}}% confidence</span></div>
+      <div class="tabs" role="tablist" aria-label="Learning space"><button class="tab active" id="conversation-tab" type="button" role="tab" aria-selected="true" aria-controls="conversation-panel">Conversation</button><button class="tab" id="context-tab" type="button" role="tab" aria-selected="false" aria-controls="context-panel" tabindex="-1">Sources &amp; goals</button><span style="flex:1"></span><span class="badge badge-teal">{{.Workspace.Dashboard.FeaturedProgress.Percent}}% confidence</span></div>
 
       <section class="workspace-layout">
-        <article class="card card-pad workspace-panel">
+        <article id="conversation-panel" class="card card-pad workspace-panel" role="tabpanel" aria-labelledby="conversation-tab" tabindex="0">
           <div id="conversation" class="conversation">
             {{template "student/workspace_conversation.html" .}}
           </div>
         </article>
-        <aside id="context" class="card card-pad context-card">
+        <aside id="context-panel" class="card card-pad context-card" role="tabpanel" aria-labelledby="context-tab" tabindex="0" hidden>
           <div class="card-header"><div><h2 class="card-title">Learning brief</h2><p class="card-subtitle">The context shaping this turn.</p></div><span class="badge badge-blue">{{.Workspace.Concept.Level}}</span></div>
           <div class="context-list">
             <div class="context-item"><div class="context-label">Goal</div><div class="context-value">{{if .Workspace.Dashboard.Objective.Description}}{{.Workspace.Dashboard.Objective.Description}}{{else}}Build a durable understanding of {{.Workspace.Concept.Title}}.{{end}}</div></div>
@@ -39,11 +43,35 @@
           </div>
           <div class="mt-24"><div class="context-label">Sources in context</div><div class="source-list mt-16">{{range .Workspace.Materials}}<div class="source-item"><span class="source-icon">{{if .Source.IsExternal}}↗{{else}}✦{{end}}</span><div><div class="source-title">{{.Title}}</div><div class="source-meta">{{if .Source.IsExternal}}External · labeled{{else}}Teacher material{{end}}</div></div></div>{{else}}<div class="muted small">No source material is published for this concept yet.</div>{{end}}</div></div>
           <div class="focus-next mt-24">Next suggested action<strong>{{.Workspace.Dashboard.FeaturedProgress.NextAction}}</strong></div>
-          <form method="post" action="/student/check" class="mt-16"><input type="hidden" name="session_id" value="{{.Workspace.Session.ID}}"><input type="hidden" name="mode" value="{{.Workspace.SelectedMode}}"><button class="btn btn-secondary btn-block" type="submit">Check my understanding <span>↗</span></button></form>
+          {{if .Workspace.ConceptArchived}}<div class="alert mt-16">This lesson is archived. Your conversation history is still available to read.</div>{{else}}<form method="post" action="/student/check" class="mt-16"><input type="hidden" name="session_id" value="{{.Workspace.Session.ID}}"><input type="hidden" name="mode" value="{{.Workspace.SelectedMode}}"><button class="btn btn-secondary btn-block" type="submit">Check my understanding <span>↗</span></button></form>{{end}}
         </aside>
       </section>
     </main>
   </div>
+  <script>
+    (() => {
+      const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+      const panels = tabs.map(tab => document.getElementById(tab.getAttribute('aria-controls')));
+      const activate = (index, moveFocus) => {
+        tabs.forEach((tab, i) => {
+          const selected = i === index;
+          tab.setAttribute('aria-selected', String(selected));
+          tab.tabIndex = selected ? 0 : -1;
+          panels[i].hidden = !selected;
+        });
+        if (moveFocus) tabs[index].focus();
+      };
+      tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => activate(index, false));
+        tab.addEventListener('keydown', event => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home' && event.key !== 'End') return;
+          event.preventDefault();
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+          activate(next, true);
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
 {{end}}

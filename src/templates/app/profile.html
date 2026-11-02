@@ -11,22 +11,65 @@
   <div class="shell">
     <header class="topbar">
       <a class="brand" href="{{if eq .Role "teacher"}}/teacher{{else}}/student{{end}}"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Your profile</span></span></a>
-      <nav class="main-nav"><a href="{{if eq .Role "teacher"}}/teacher{{else}}/student{{end}}">Workspace</a><a class="active" href="/profile">Profile</a></nav>
+      <nav class="main-nav"><a href="{{if eq .Role "teacher"}}/teacher{{else}}/student{{end}}">Workspace</a></nav>
       <div class="topbar-spacer"></div>
-      <a class="role-pill" href="/logout">Sign out</a>
+      <details class="account-menu">
+        <summary aria-label="Account menu for {{.Account.Name}}"><span class="avatar {{if eq .Role "teacher"}}coral{{end}}">{{initials .Account.Name}}</span><span class="account-menu-name">{{.Account.Name}}</span><span class="account-menu-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="account-popover"><div class="account-popover-heading">Signed in as<strong>{{.Account.Name}}</strong></div><a href="/profile" aria-current="page">View full profile</a><a class="account-signout" href="/logout">Sign out</a></div>
+      </details>
     </header>
     <main class="page page-narrow">
-      <section class="page-heading"><div><div class="eyebrow">Account</div><h1 class="page-title">Your profile</h1><p class="page-lede">The account details used for your CoLearn workspace.</p></div></section>
+      {{if .Notice}}<div class="alert alert-success" role="status">{{.Notice}}</div>{{end}}
+      {{if .Error}}<div class="alert alert-error" role="alert">{{.Error}}</div>{{end}}
+      <section class="page-heading"><div><div class="eyebrow">Account</div><h1 class="page-title">Your profile</h1><p class="page-lede">Your account identity and study details.</p></div></section>
       <section class="card card-pad profile-card">
-        <div class="profile-avatar">{{initials .Name}}</div>
+        <div class="profile-avatar">{{initials .Account.Name}}</div>
         <div class="profile-details">
-          <div class="profile-row"><span class="context-label">Name</span><strong>{{.Name}}</strong></div>
-          <div class="profile-row"><span class="context-label">Email</span><strong>{{.Email}}</strong></div>
+          <div class="profile-row"><span class="context-label">Name</span><strong>{{.Account.Name}}</strong></div>
+          <div class="profile-row"><span class="context-label">Email</span><strong>{{.Account.Email}}</strong></div>
           <div class="profile-row"><span class="context-label">Role</span><strong>{{if eq .Role "teacher"}}Teacher{{else}}Student{{end}}</strong></div>
-          <div class="profile-row"><span class="context-label">Account ID</span><code>{{.ID}}</code></div>
+          {{if eq .Role "teacher"}}<div class="profile-row"><span class="context-label">Academic title</span><strong>{{if .Account.TeachingTitle}}{{.Account.TeachingTitle}}{{else}}Not provided{{end}}</strong></div><div class="profile-row"><span class="context-label">Department</span><strong>{{if .Account.Department}}{{.Account.Department}}{{else}}Not provided{{end}}</strong></div>{{end}}
+          <div class="profile-row"><span class="context-label">Account ID</span><code>{{.Account.ID}}</code></div>
         </div>
       </section>
-      <p class="small muted mt-16">Profile editing and recovery options are not available yet.</p>
+      <section class="card card-pad mt-24">
+        <div class="card-header"><div><h2 class="card-title">{{if eq .Role "teacher"}}Teaching profile{{else}}Study profile{{end}}</h2><p class="card-subtitle">These details help keep your workspace relevant.</p></div></div>
+        <form method="post" action="/profile" class="form-grid">
+          <div class="form-field full"><label for="profile-name">Full name</label><input class="input" id="profile-name" name="name" value="{{.Account.Name}}" autocomplete="name" maxlength="100" required></div>
+          {{if eq .Role "student"}}
+            <div class="form-field"><label for="academic-program">Program or degree</label><input class="input" id="academic-program" name="academic_program" value="{{.Account.AcademicProgram}}" maxlength="120" placeholder="e.g. BSc Computer Science"></div>
+            <div class="form-field"><label for="branch">Branch or major</label><input class="input" id="branch" name="branch" value="{{.Account.Branch}}" maxlength="120" placeholder="e.g. Computer Science"></div>
+            <div class="form-field"><label for="semester">Current semester</label><input class="input" id="semester" name="semester" type="number" min="0" max="20" value="{{.Account.Semester}}" inputmode="numeric"></div>
+            <div class="form-field"><label for="academic-year">Academic year</label><input class="input" id="academic-year" name="academic_year" value="{{.Account.AcademicYear}}" maxlength="40" placeholder="e.g. 2026–27"></div>
+          {{else}}
+            <div class="form-field"><label for="teaching-title">Academic title or teaching level</label><input class="input" id="teaching-title" name="teaching_title" value="{{.Account.TeachingTitle}}" maxlength="80" placeholder="e.g. Assistant Professor"></div>
+            <div class="form-field"><label for="department">Department</label><input class="input" id="department" name="department" value="{{.Account.Department}}" maxlength="120" placeholder="e.g. Mathematics"></div>
+          {{end}}
+          <div class="page-actions form-field full"><button class="btn btn-primary" type="submit">Save profile</button></div>
+        </form>
+      </section>
+      {{if eq .Role "student"}}
+      <section class="card card-pad mt-24">
+        <div class="card-header"><div><h2 class="card-title">Courses</h2><p class="card-subtitle">Your course requests and approved enrollments.</p></div><a class="btn btn-secondary btn-sm" href="/student/courses">Browse courses</a></div>
+        <div class="enrollment-list">
+          {{range .Enrollments}}
+          <article class="enrollment-item">
+            <div class="enrollment-main"><span class="eyebrow">{{.Subject}}</span><h3>{{.CourseTitle}}</h3><p>{{.Description}}</p><div class="enrollment-teacher"><strong>{{.TeacherName}}</strong>{{if .TeacherEmail}}<span>{{.TeacherEmail}}</span>{{end}}</div></div>
+            <span class="badge {{if eq .Status "approved"}}badge-teal{{else if eq .Status "pending"}}badge-amber{{else}}badge-coral{{end}}">{{.Status}}</span>
+          </article>
+          {{else}}<div class="conversation-empty"><strong>No course enrollments yet</strong><span>Browse the catalog to request a place in a course.</span><a class="btn btn-primary mt-16" href="/student/courses">Browse courses</a></div>{{end}}
+        </div>
+      </section>
+      {{end}}
+      <section class="card card-pad mt-24">
+        <div class="card-header"><div><h2 class="card-title">Change password</h2><p class="card-subtitle">Changing your password signs out other sessions for this account.</p></div></div>
+        <form method="post" action="/profile/password" class="form-grid">
+          <div class="form-field full"><label for="current-password">Current password</label><input class="input" id="current-password" name="current_password" type="password" autocomplete="current-password" required maxlength="72"></div>
+          <div class="form-field"><label for="new-password">New password</label><input class="input" id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></div>
+          <div class="form-field"><label for="confirm-password">Confirm new password</label><input class="input" id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></div>
+          <div class="page-actions form-field full"><button class="btn btn-secondary" type="submit">Update password</button></div>
+        </form>
+      </section>
     </main>
   </div>
 </body>

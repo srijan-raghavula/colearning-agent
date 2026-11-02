@@ -197,10 +197,31 @@ func sessionWorkflowKey(sessionID string) string {
 }
 
 func (p StudentLearningPortal) Dashboard(ctx context.Context, studentID string) (domain.StudentLearningDashboard, error) {
+	return p.DashboardForCourse(ctx, studentID, "")
+}
+
+func (p StudentLearningPortal) DashboardForCourse(ctx context.Context, studentID, courseID string) (domain.StudentLearningDashboard, error) {
 	studentID = defaultStudentIDValue(studentID)
-	course, concepts, err := p.primaryCourse(ctx)
+	var course domain.LearningCourse
+	var concepts []domain.LearningConcept
+	var err error
+	if strings.TrimSpace(courseID) == "" {
+		course, concepts, err = p.primaryCourse(ctx)
+	} else {
+		var found bool
+		course, found, err = p.content.FindCourse(ctx, strings.TrimSpace(courseID))
+		if err == nil && !found {
+			err = fmt.Errorf("course %q was not found", courseID)
+		}
+		if err == nil {
+			concepts, err = p.content.ListConcepts(ctx, course.ID)
+		}
+	}
 	if err != nil {
 		return domain.StudentLearningDashboard{}, err
+	}
+	if len(concepts) == 0 {
+		return domain.StudentLearningDashboard{StudentID: studentID, StudentName: learningStudentName(studentID), Course: course, Policy: course.TutorPolicy}, nil
 	}
 
 	progressRecords, err := p.progress.ListByStudent(ctx, studentID, course.ID)
@@ -243,6 +264,15 @@ func (p StudentLearningPortal) Dashboard(ctx context.Context, studentID string) 
 	activeSession, hasSession, err := p.sessions.FindActive(ctx, studentID, course.ID, "")
 	if err != nil {
 		return domain.StudentLearningDashboard{}, err
+	}
+	if hasSession {
+		activeConcept, found, findErr := p.content.FindConcept(ctx, activeSession.ConceptID)
+		if findErr != nil {
+			return domain.StudentLearningDashboard{}, findErr
+		}
+		if !found || activeConcept.Archived {
+			hasSession = false
+		}
 	}
 	var turns []domain.LearningTurn
 	if hasSession {
@@ -524,6 +554,9 @@ func (p StudentLearningPortal) validateLearningSession(
 	if !found {
 		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("concept for learning session was not found")
 	}
+	if concept.Archived {
+		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("this lesson is archived; its learning history is read-only")
+	}
 	if concept.CourseID != course.ID {
 		return domain.LearningCourse{}, domain.LearningConcept{}, "", errors.New("learning session concept does not belong to its course")
 	}
@@ -643,6 +676,9 @@ func (p StudentLearningPortal) CheckUnderstanding(ctx context.Context, sessionID
 	}
 	if !found {
 		return domain.UnderstandingCheck{}, errors.New("concept for learning session was not found")
+	}
+	if concept.Archived {
+		return domain.UnderstandingCheck{}, errors.New("this lesson is archived; its learning history is read-only")
 	}
 	if concept.CourseID != course.ID {
 		return domain.UnderstandingCheck{}, errors.New("learning session concept does not belong to its course")
@@ -1017,15 +1053,40 @@ func (p TeacherLearningPortal) persistChange(ctx context.Context) {
 	invokeLearningChangeHook(ctx, p.onChange)
 }
 
-func (p TeacherLearningPortal) Dashboard(ctx context.Context) (domain.TeacherLearningDashboard, error) {
+func (p TeacherLearningPortal) Dashboard(ctx context.Context, teacherIDs ...string) (domain.TeacherLearningDashboard, error) {
 	courses, err := p.content.ListCourses(ctx)
 	if err != nil {
 		return domain.TeacherLearningDashboard{}, err
+	}
+	if len(teacherIDs) > 0 && teacherIDs[0] != "" {
+		owned := make([]domain.LearningCourse, 0, len(courses))
+		for _, candidate := range courses {
+			if candidate.TeacherID == teacherIDs[0] {
+				owned = append(owned, candidate)
+			}
+		}
+		courses = owned
+		if len(courses) == 0 {
+			return domain.TeacherLearningDashboard{}, nil
+		}
 	}
 	if len(courses) == 0 {
 		return domain.TeacherLearningDashboard{}, errors.New("no learning course is configured")
 	}
 	course := courses[0]
+	if len(teacherIDs) > 1 && strings.TrimSpace(teacherIDs[1]) != "" {
+		requestedID := strings.TrimSpace(teacherIDs[1])
+		found := false
+		for _, candidate := range courses {
+			if candidate.ID == requestedID {
+				course, found = candidate, true
+				break
+			}
+		}
+		if !found {
+			return domain.TeacherLearningDashboard{}, errors.New("course is not available to this teacher")
+		}
+	}
 	concepts, err := p.content.ListConcepts(ctx, course.ID)
 	if err != nil {
 		return domain.TeacherLearningDashboard{}, err

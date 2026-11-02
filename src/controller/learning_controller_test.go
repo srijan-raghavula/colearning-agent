@@ -84,3 +84,27 @@ func TestAPITurnSerializesEmptySourcesAsArray(t *testing.T) {
 		t.Fatalf("sources = %s, want []", sources)
 	}
 }
+
+func TestWorkspaceTutorModesFollowCurrentPolicy(t *testing.T) {
+	policy := domain.TutorPolicy{
+		DefaultMode:  domain.TutorModeSocratic,
+		AllowedModes: []domain.TutorMode{domain.TutorModeSocratic, domain.TutorModeHint},
+	}
+	want := []domain.TutorMode{domain.TutorModeSocratic, domain.TutorModeHint}
+	if got := availableTutorModes(policy); len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("availableTutorModes() = %v, want %v", got, want)
+	}
+	if got := displayTutorMode(policy, domain.TutorModeDirect, domain.TutorModeDirect); got != domain.TutorModeSocratic {
+		t.Fatalf("displayTutorMode() = %q, want current policy default %q", got, domain.TutorModeSocratic)
+	}
+	if got := displayTutorMode(policy, domain.TutorModeHint, domain.TutorModeSocratic); got != domain.TutorModeHint {
+		t.Fatalf("displayTutorMode() = %q, want selected allowed mode %q", got, domain.TutorModeHint)
+	}
+}
+
+func TestFindConceptDoesNotSubstituteAnotherLesson(t *testing.T) {
+	cards := []domain.ConceptProgressCard{{Concept: domain.LearningConcept{ID: "active-lesson", Title: "Active lesson"}}}
+	if got := findConcept(cards, "archived-lesson"); got.ID != "" {
+		t.Fatalf("findConcept() returned %q for an unrelated lesson", got.ID)
+	}
+}

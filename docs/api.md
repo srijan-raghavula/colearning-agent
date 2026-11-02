@@ -21,10 +21,11 @@ The controller derives the learner ID and role from the signed session and ignor
 POST /api/auth/login
 POST /api/auth/signup
 GET  /profile
+POST /profile/password
 GET  /logout
 ```
 
-Login and signup set the `auth_token` HttpOnly cookie. The browser UI redirects to the workspace for the account role. The profile page shows the account name, email, role, and account ID.
+Login and signup set the `auth_token` HttpOnly cookie. The browser UI redirects to the workspace for the account role. The profile page shows the account name, email, role, and account ID. Its password-change form verifies the current password, checks the new password confirmation, and revokes previously issued sessions for the account.
 
 ## Student dashboard
 

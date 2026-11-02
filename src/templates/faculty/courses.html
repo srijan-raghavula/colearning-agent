@@ -1,0 +1,21 @@
+{{define "faculty/courses.html"}}
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Your courses · CoLearn</title><link rel="stylesheet" href="/static/assets/app.css"></head>
+<body><div class="shell">
+  <header class="topbar">
+    <a class="brand" href="/teacher"><span class="brand-mark">C</span><span class="brand-copy"><span class="brand-name">CoLearn</span><span class="brand-sub">Teacher workspace</span></span></a>
+    {{template "faculty/navigation.html" .}}<div class="topbar-spacer"></div>
+    <details class="account-menu"><summary aria-label="Account menu for {{.Identity.Name}}"><span class="avatar coral">{{initials .Identity.Name}}</span><span class="account-menu-name">{{.Identity.Name}}</span><span class="account-menu-chevron" aria-hidden="true">⌄</span></summary><div class="account-popover"><div class="account-popover-heading">Signed in as<strong>{{.Identity.Name}}</strong></div><a href="/profile">View full profile</a><a class="account-signout" href="/logout">Sign out</a></div></details>
+  </header>
+  <main class="page">
+    {{if .Notice}}<div class="alert alert-success" role="status">{{.Notice}}</div>{{end}}
+    {{if .Error}}<div class="alert alert-error" role="alert">{{.Error}}</div>{{end}}
+    <section class="page-heading"><div><div class="eyebrow">Teacher workspace</div><h1 class="page-title">Your courses</h1><p class="page-lede">Build a course, shape its curriculum, and review enrollment requests.</p></div><div class="page-actions"><a class="btn btn-primary" href="/teacher/courses/new">Create course <span>＋</span></a></div></section>
+    <section class="course-grid">
+      {{range .Courses}}<article class="card course-card"><span class="badge badge-blue">{{.Subject}}</span><h2>{{.Title}}</h2><p class="course-description">{{.Description}}</p><div class="course-facts"><span>{{.ConceptCount}} learning concepts</span><span>{{.StudentCount}} learners</span></div><a class="btn btn-secondary btn-block mt-16" href="/teacher/courses/{{.ID}}">Edit course <span>→</span></a></article>
+      {{else}}<div class="card card-pad conversation-empty"><div class="empty-icon">＋</div><strong>Your first course starts here</strong><span>Create a course, then build its modules and lessons.</span><a class="btn btn-primary mt-16" href="/teacher/courses/new">Create a course</a></div>{{end}}
+    </section>
+  </main>
+</div></body></html>
+{{end}}
