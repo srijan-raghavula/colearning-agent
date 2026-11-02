@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/srijan-raghavula/colearning-agent/src/auth"
 	"github.com/srijan-raghavula/colearning-agent/src/controller"
@@ -26,23 +27,25 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 	mux.HandleFunc("/healthz", deps.Health.Handle)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("src/templates"))))
 
-	// Product landing page
-	mux.HandleFunc("GET /{$}", deps.Learning.LandingPage)
+	// Standalone frontend shell. Go remains the API and authentication server;
+	// the browser renders product pages from JSON responses.
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("src/frontend/assets"))))
 
 	// Authentication routes (login demo, teacher demo, etc.)
 	authCtrl := controller.NewAuthController(deps.Renderer, deps.Accounts).WithEnrollmentStore(deps.Enrollments)
 	RegisterAuth(mux, authCtrl, identityStore)
 	// Signup endpoint (uses controller logic)
 	mux.HandleFunc("/api/auth/signup", authCtrl.Signup)
+	mux.HandleFunc("/api/auth/me", authCtrl.Me)
 
-	mux.HandleFunc("GET /login", authCtrl.LoginPage)
-	mux.HandleFunc("GET /signup", authCtrl.SignupPage)
 	mux.HandleFunc("GET /logout", authCtrl.Logout)
+	// Compatibility profile endpoints remain available while the SPA uses
+	// /api/auth/me for its session header.
 	mux.HandleFunc("GET /profile", authenticated(authCtrl.ProfilePage, identityStore))
 	mux.HandleFunc("POST /profile", authenticated(authCtrl.UpdateProfile, identityStore))
 	mux.HandleFunc("POST /profile/password", authenticated(authCtrl.UpdatePassword, identityStore))
 
-	// Student routes
+	// Legacy portal routes remain as a migration bridge for existing links.
 	mux.HandleFunc("/student", roleRequired("student", deps.Learning.StudentPage, identityStore))
 	mux.HandleFunc("/student/workspace", roleRequired("student", deps.Learning.StudentWorkspace, identityStore))
 	mux.HandleFunc("/student/session", roleRequired("student", deps.Learning.StartStudentSession, identityStore))
@@ -51,8 +54,6 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 	mux.HandleFunc("GET /student/courses", roleRequired("student", deps.Courses.StudentCatalog, identityStore))
 	mux.HandleFunc("GET /student/courses/{course_id}", roleRequired("student", deps.Courses.StudentCourseDetails, identityStore))
 	mux.HandleFunc("POST /student/courses/{course_id}/enroll", roleRequired("student", deps.Courses.RequestEnrollment, identityStore))
-
-	// Teacher / faculty routes
 	mux.HandleFunc("/teacher", teacherRoleRequired(deps.Learning.TeacherPage, identityStore))
 	mux.HandleFunc("/teacher/content", teacherRoleRequired(deps.Learning.TeacherContent, identityStore))
 	mux.HandleFunc("/teacher/materials", teacherRoleRequired(deps.Learning.PublishMaterial, identityStore))
@@ -95,4 +96,14 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 	mux.HandleFunc("/student/submit", roleRequired("student", deps.Student.Submit, identityStore))
 	mux.HandleFunc("/faculty/summary", teacherRoleRequired(deps.Faculty.SummaryPartial, identityStore))
 	mux.HandleFunc("/faculty/missing", teacherRoleRequired(deps.Faculty.MissingPartial, identityStore))
+
+	mux.HandleFunc("/", frontendShell)
+}
+
+func frontendShell(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/api/") {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, "src/frontend/index.html")
 }

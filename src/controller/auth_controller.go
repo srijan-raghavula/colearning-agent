@@ -135,6 +135,7 @@ func (c AuthController) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	if c.accounts == nil {
 		writeAuthFailure(w, r, http.StatusServiceUnavailable, "Account service is unavailable.")
 		return
@@ -164,6 +165,26 @@ func (c AuthController) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"user": user})
+}
+
+func (c AuthController) Me(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeAuthFailure(w, r, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	store, _ := c.accounts.(auth.IdentityStore)
+	identity, err := auth.IdentityFromRequestWithStore(r, store)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"user": nil})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{
+		"id": identity.ID, "name": identity.Name, "email": identity.Email,
+		"role": identity.Role, "auth_version": identity.AuthVersion,
+	}})
 }
 
 func decodeAuthRequest(w http.ResponseWriter, r *http.Request, target any) error {

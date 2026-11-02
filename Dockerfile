@@ -8,7 +8,7 @@ RUN apk add --no-cache build-base
 WORKDIR /app
 
 # Copy module definition
-COPY go.mod ./
+COPY go.mod go.sum ./
 
 # Copy source directory
 COPY src/ ./src/
@@ -35,6 +35,7 @@ COPY --from=builder /app/colearning-agent /app/colearning-agent
 
 # Copy HTML, HTMX, and shared CSS assets required by view.NewRenderer
 COPY --from=builder /app/src/templates /app/src/templates
+COPY --from=builder /app/src/frontend /app/src/frontend
 
 # Assign permissions
 RUN chown -R appuser:appgroup /app

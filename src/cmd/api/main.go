@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/srijan-raghavula/colearning-agent/src/bootstrap"
+	apphttp "github.com/srijan-raghavula/colearning-agent/src/http"
 	"github.com/srijan-raghavula/colearning-agent/src/routes"
 )
 
@@ -32,7 +33,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              app.Config.Address,
-		Handler:           http.MaxBytesHandler(mux, 1<<20),
+		Handler:           apphttp.Middleware(http.MaxBytesHandler(mux, 1<<20)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       20 * time.Second,
 		WriteTimeout:      30 * time.Second,
