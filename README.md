@@ -8,6 +8,7 @@ CoLearn is a teacher-grounded human–AI co-learning application. The primary st
 - Target architecture and Mermaid diagrams: [`docs/project-architecture.md`](docs/project-architecture.md)
 - Versioned JSON API: [`docs/api.md`](docs/api.md)
 - UI architecture: [`docs/ui-architecture.md`](docs/ui-architecture.md)
+- UI completion audit and follow-up boundary: [`docs/ui-completion-audit.md`](docs/ui-completion-audit.md)
 - User flow: [`planning/userflow-mermaid.md`](planning/userflow-mermaid.md)
 - User stories: [`planning/user-stories.md`](planning/user-stories.md)
 - Feature plans: [`planning/features/`](planning/features/)

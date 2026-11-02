@@ -21,7 +21,7 @@
         if (!response.ok || !result.user) {
           throw new Error(result.error || 'We could not sign you in. Check your details and try again.');
         }
-        window.location.assign(result.user.role === 'teacher' ? '/teacher' : '/student');
+        window.location.assign(result.user.role === 'teacher' ? '/app/teacher' : '/app/student');
       } catch (err) {
         error.textContent = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
         button.disabled = false;

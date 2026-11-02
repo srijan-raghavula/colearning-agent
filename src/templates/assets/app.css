@@ -348,11 +348,13 @@ label { color: var(--ink); font-size: 12px; font-weight: 700; }
 .course-detail-card { background: linear-gradient(145deg, #fff, #f1faf8); }
 .course-outline-list { display: grid; gap: 14px; }
 .course-outline-module { background: #f8fafc; border: 1px solid var(--line); border-radius: 12px; padding: 15px; }
-.course-outline-module > strong { font-size: 13px; }
+.course-outline-module > summary, .course-outline-chapter > summary { cursor: pointer; font-size: 13px; font-weight: 750; }
+.course-outline-module > summary:focus-visible, .course-outline-chapter > summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
 .course-outline-module > p { color: var(--muted); font-size: 11px; margin: 5px 0 0; }
 .course-outline-chapter { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 11px; }
-.course-outline-chapter > span { font-size: 11px; font-weight: 750; }
 .course-outline-chapter ul { color: var(--muted); font-size: 11px; margin: 5px 0 0; padding-left: 20px; }
+.course-outline-lesson { display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; color: var(--teal-dark); }
+.course-outline-lesson:hover, .course-outline-lesson:focus-visible { text-decoration: underline; }
 .enrollment-list { display: grid; gap: 14px; }
 .enrollment-item { align-items: center; display: flex; gap: 20px; justify-content: space-between; padding: 20px; }
 .enrollment-main { flex: 1; min-width: 0; }

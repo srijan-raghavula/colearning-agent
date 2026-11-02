@@ -1,16 +1,16 @@
 # CoLearn UI Architecture
 
-The UI is a thin presentation layer over the learning use cases. It is polished enough to review as a product surface while keeping the business core small and replaceable.
+The UI is a thin presentation layer over the learning use cases. The primary browser surface is the standalone application in `src/frontend`; the server-rendered templates remain compatibility views while the product surface migrates.
 
 ## Shell
 
-All product pages share:
+All primary product pages share:
 
-- a dark top navigation bar
+- a role-specific top navigation bar
 - a clear student/teacher role context
 - a responsive page container
 - shared spacing, color, typography, and button tokens
-- server-rendered HTML with full-page post/redirect/get for reliable form submissions
+- JSON-backed browser rendering with explicit loading, empty, and error states
 - signed-in account identity with role-aware student and teacher routes
 - a profile page with the current account name, email, role, and ID
 
@@ -67,6 +67,10 @@ The teacher view emphasizes teaching opportunities rather than gradebook adminis
 - recent learning evidence
 - content health
 - current tutor policy
+
+The SPA teacher dashboard intentionally keeps overview and course setup in one
+workspace. Course setup publishes teacher materials and updates tutor policy
+through the versioned API instead of linking to unfinished duplicate pages.
 
 ### Content studio (`/teacher/content`)
 

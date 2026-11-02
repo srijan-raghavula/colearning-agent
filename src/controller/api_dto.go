@@ -127,6 +127,16 @@ type apiStudentDashboard struct {
 	Objective        apiObjective     `json:"objective"`
 	Policy           apiTutorPolicy   `json:"policy"`
 	Stats            apiStats         `json:"stats"`
+	Courses          []apiEnrollment  `json:"courses"`
+}
+
+type apiEnrollment struct {
+	CourseID    string                  `json:"course_id"`
+	CourseTitle string                  `json:"course_title"`
+	Subject     string                  `json:"subject"`
+	TeacherID   string                  `json:"teacher_id"`
+	TeacherName string                  `json:"teacher_name"`
+	Status      domain.EnrollmentStatus `json:"status"`
 }
 
 type apiTeacherStats struct {
@@ -158,6 +168,7 @@ type apiEvidence struct {
 }
 
 type apiTeacherDashboard struct {
+	Courses        []apiCourse       `json:"courses"`
 	Course         apiCourse        `json:"course"`
 	Concepts       []apiConceptCard `json:"concepts"`
 	Materials      []apiMaterial    `json:"materials"`
@@ -237,7 +248,7 @@ func toAPICard(card domain.ConceptProgressCard) apiConceptCard {
 	return apiConceptCard{Concept: toAPIConcept(card.Concept), Progress: toAPIProgress(card.Progress), State: card.State}
 }
 
-func toAPIStudentDashboard(dashboard domain.StudentLearningDashboard) apiStudentDashboard {
+func toAPIStudentDashboard(dashboard domain.StudentLearningDashboard, enrollments []domain.CourseEnrollment) apiStudentDashboard {
 	cards := make([]apiConceptCard, 0, len(dashboard.Concepts))
 	for _, card := range dashboard.Concepts {
 		cards = append(cards, toAPICard(card))
@@ -255,10 +266,14 @@ func toAPIStudentDashboard(dashboard domain.StudentLearningDashboard) apiStudent
 		converted := toAPISession(*dashboard.ActiveSession)
 		active = &converted
 	}
-	return apiStudentDashboard{StudentID: dashboard.StudentID, StudentName: dashboard.StudentName, Course: toAPICourse(dashboard.Course), Concepts: cards, FeaturedConcept: toAPIConcept(dashboard.FeaturedConcept), FeaturedProgress: toAPIProgress(dashboard.FeaturedProgress), ActiveSession: active, Turns: turns, Materials: materials, Objective: toAPIObjective(dashboard.Objective), Policy: toAPIPolicy(dashboard.Policy), Stats: apiStats(dashboard.Stats)}
+	courses := make([]apiEnrollment, 0, len(enrollments))
+	for _, enrollment := range enrollments {
+		courses = append(courses, apiEnrollment{CourseID: enrollment.CourseID, CourseTitle: enrollment.CourseTitle, Subject: enrollment.Subject, TeacherID: enrollment.TeacherID, TeacherName: enrollment.TeacherName, Status: enrollment.Status})
+	}
+	return apiStudentDashboard{StudentID: dashboard.StudentID, StudentName: dashboard.StudentName, Course: toAPICourse(dashboard.Course), Concepts: cards, FeaturedConcept: toAPIConcept(dashboard.FeaturedConcept), ActiveSession: active, Turns: turns, Materials: materials, Objective: toAPIObjective(dashboard.Objective), Policy: toAPIPolicy(dashboard.Policy), Stats: apiStats(dashboard.Stats), Courses: courses}
 }
 
-func toAPITeacherDashboard(dashboard domain.TeacherLearningDashboard) apiTeacherDashboard {
+func toAPITeacherDashboard(dashboard domain.TeacherLearningDashboard, courses []domain.LearningCourse) apiTeacherDashboard {
 	cards := make([]apiConceptCard, 0, len(dashboard.Concepts))
 	for _, card := range dashboard.Concepts {
 		cards = append(cards, toAPICard(card))
@@ -275,7 +290,11 @@ func toAPITeacherDashboard(dashboard domain.TeacherLearningDashboard) apiTeacher
 	for _, item := range dashboard.RecentEvidence {
 		evidence = append(evidence, apiEvidence{ID: item.ID, SessionID: item.SessionID, TurnID: item.TurnID, StudentID: item.StudentID, CourseID: item.CourseID, ConceptID: item.ConceptID, Kind: item.Kind, Note: item.Note, ObservedAt: item.ObservedAt})
 	}
-	return apiTeacherDashboard{Course: toAPICourse(dashboard.Course), Concepts: cards, Materials: materials, Policy: toAPIPolicy(dashboard.Policy), Stats: apiTeacherStats(dashboard.Stats), SupportNeeded: support, RecentEvidence: evidence}
+	availableCourses := make([]apiCourse, 0, len(courses))
+	for _, course := range courses {
+		availableCourses = append(availableCourses, toAPICourse(course))
+	}
+	return apiTeacherDashboard{Courses: availableCourses, Course: toAPICourse(dashboard.Course), Concepts: cards, Materials: materials, Policy: toAPIPolicy(dashboard.Policy), Stats: apiTeacherStats(dashboard.Stats), SupportNeeded: support, RecentEvidence: evidence}
 }
 
 func toAPITurnResult(result domain.LearningTurnResult) apiTurnResult {

@@ -159,11 +159,36 @@ GET /api/v1/teacher/dashboard
 
 Returns a `TeacherLearningDashboard` containing:
 
+- all courses owned by the authenticated teacher in `courses`
 - course and tutor policy
 - class concept confidence cards
 - source/material health
 - support-needed learners
 - recent learning evidence
+
+Pass `course_id` as a query parameter to load a specific owned course.
+
+The student dashboard also returns enrolled course choices in `courses`,
+including teacher identity and enrollment status, so clients can switch among
+approved courses without guessing from a single default.
+
+## Create a teacher course
+
+```http
+POST /api/v1/teacher/courses
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "Algebra foundations",
+  "subject": "Mathematics",
+  "description": "Build confidence with equations and functions."
+}
+```
+
+Creates a course owned by the authenticated teacher and returns the course
+object used by the teacher dashboard.
 
 ## Publish learning material
 
