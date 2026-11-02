@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
+	"github.com/srijan-raghavula/colearning-agent/src/adapter/llm"
 	"github.com/srijan-raghavula/colearning-agent/src/adapter/memory"
 	"github.com/srijan-raghavula/colearning-agent/src/adapter/persist"
 	"github.com/srijan-raghavula/colearning-agent/src/adapter/sqlite"
@@ -325,13 +327,32 @@ func NewApp() (App, error) {
 	if sqlRepo != nil {
 		agentLogger = sqlRepo
 	}
+	aiConfig := config.LoadAI()
+	var tutorGateway repository.LearningAgentGateway = memory.NewStubLearningAgentGateway()
+	var formativeGatewayImpl repository.FormativeCheckGateway = memory.NewStubFormativeCheckGateway()
+	var curriculumGatewayImpl agentic.CurriculumAuthoringGateway = memory.NewStubCurriculumAuthoringGateway()
+	switch aiConfig.Provider {
+	case "stub":
+	case "openai", "openai-compatible":
+		provider := &llm.OpenAICompatibleGateway{
+			BaseURL: aiConfig.BaseURL,
+			APIKey:  aiConfig.APIKey,
+			Model:   aiConfig.Model,
+			Client:  &http.Client{Timeout: aiConfig.Timeout},
+		}
+		tutorGateway = provider
+		formativeGatewayImpl = provider
+		curriculumGatewayImpl = provider
+	default:
+		return App{}, fmt.Errorf("unsupported COLEARN_AI_PROVIDER %q", aiConfig.Provider)
+	}
 	learningGateway := agentic.Gateway{
-		Agent:  &agentic.TutorAgent{Gateway: memory.NewStubLearningAgentGateway()},
+		Agent:  &agentic.TutorAgent{Gateway: tutorGateway},
 		Logger: agentLogger,
 	}
-	curriculumAuthoring := agentic.CurriculumAuthoringAgent{Gateway: memory.NewStubCurriculumAuthoringGateway(), Logger: agentLogger}
+	curriculumAuthoring := agentic.CurriculumAuthoringAgent{Gateway: curriculumGatewayImpl, Logger: agentLogger}
 	learningAgent := service.NewTutorAgent(learningGateway)
-	formativeGateway := agentic.FormativeChecker{Gateway: memory.NewStubFormativeCheckGateway(), Logger: agentLogger}
+	formativeGateway := agentic.FormativeChecker{Gateway: formativeGatewayImpl, Logger: agentLogger}
 	understandingChecker := service.NewUnderstandingCheckService(formativeGateway)
 
 	studentPortal := usecase.NewStudentPortal(submissionRepo, evaluationRepo)

@@ -83,6 +83,13 @@ This file records the user-facing work requested for the authenticated student a
 - Verification: integration flow changes a password, confirms the new credential works, and confirms the old signed session is rejected. It also archives a lesson, checks it disappears from the live curriculum and tutor context, and confirms the existing session remains readable.
 - Next usability gaps: browser-level interaction checks and production tutor/check providers.
 
+## Follow-up: installable model provider boundary
+
+- [x] Add an OpenAI-compatible tutor provider with bounded HTTP timeouts, JSON contract parsing, explicit upstream errors, and existing application guardrails.
+- [x] Use the configured provider for tutor turns, formative understanding checks, and curriculum draft generation; keep the deterministic provider as the offline default.
+- [x] Document environment configuration for hosted or self-hosted `/chat/completions` endpoints.
+- Verification: `GOCACHE=/tmp/colearning-go-cache go test ./...`, `GOCACHE=/tmp/colearning-go-cache go vet ./...`, and `git diff --check`.
+
 ## Follow-up: student dashboard hierarchy and conversation sides
 
 - [x] Keep one primary overview action for resuming the current conversation or starting the featured lesson; retain individual learning-path links for students choosing a different concept.

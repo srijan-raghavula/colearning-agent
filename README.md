@@ -74,6 +74,10 @@ Set `COLEARN_JWT_SECRET` to a stable random value of at least 32 bytes before de
 
 Set `COLEARN_DEMO_ACCOUNTS=false` before deployment to disable the seeded demo passwords. The demo account records remain as course references but receive fresh random passwords at startup.
 
+### AI provider
+
+The local default is the deterministic `stub` provider. To connect an OpenAI-compatible model, set `COLEARN_AI_PROVIDER=openai-compatible`, `COLEARN_AI_API_KEY`, and `COLEARN_AI_MODEL`; optionally set `COLEARN_AI_BASE_URL` (defaults to `https://api.openai.com/v1`) and `COLEARN_AI_TIMEOUT_SECONDS` (defaults to 45). The agent sends grounded course context and accepts only the typed tutor response contract; provider failures are returned explicitly rather than silently falling back.
+
 ### Docker and containerization
 
 ```bash
