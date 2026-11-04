@@ -102,6 +102,39 @@ func TestEndToEndStudentFlow(t *testing.T) {
 	if dashboardJSON["student_id"] != "S-001" || dashboardJSON["student_name"] != "Alex Morgan" {
 		t.Fatalf("dashboard identity = (%v, %v), want authenticated account", dashboardJSON["student_id"], dashboardJSON["student_name"])
 	}
+	curriculumResponse := doRequest(http.MethodGet, "/api/v1/student/courses/course-algebra-foundations/curriculum", "")
+	if curriculumResponse.Code != http.StatusOK {
+		t.Fatalf("student curriculum status = %d, want %d", curriculumResponse.Code, http.StatusOK)
+	}
+	var curriculumJSON struct {
+		CourseID string `json:"course_id"`
+		Modules  []struct {
+			Chapters []struct {
+				Lessons []struct {
+					Contents []struct {
+						Published bool `json:"published"`
+					} `json:"contents"`
+				} `json:"lessons"`
+			} `json:"chapters"`
+		} `json:"modules"`
+	}
+	if err := json.NewDecoder(curriculumResponse.Body).Decode(&curriculumJSON); err != nil {
+		t.Fatalf("decode student curriculum: %v", err)
+	}
+	if curriculumJSON.CourseID != "course-algebra-foundations" || len(curriculumJSON.Modules) == 0 {
+		t.Fatalf("student curriculum = %+v, want seeded course modules", curriculumJSON)
+	}
+	for _, module := range curriculumJSON.Modules {
+		for _, chapter := range module.Chapters {
+			for _, lesson := range chapter.Lessons {
+				for _, content := range lesson.Contents {
+					if !content.Published {
+						t.Fatal("student curriculum exposed unpublished lesson content")
+					}
+				}
+			}
+		}
+	}
 
 	studentPage := doRequest(http.MethodGet, "/student", "")
 	studentHTML, _ := io.ReadAll(studentPage.Body)
@@ -244,6 +277,20 @@ func TestEndToEndStudentFlow(t *testing.T) {
 	}
 	if teacherCookie == nil {
 		t.Fatal("teacher login did not set auth cookie")
+	}
+	teacherCurriculum := httptest.NewRequest(http.MethodGet, "/api/v1/teacher/courses/course-algebra-foundations/curriculum", nil)
+	teacherCurriculum.AddCookie(teacherCookie)
+	teacherCurriculumRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(teacherCurriculumRecorder, teacherCurriculum)
+	if teacherCurriculumRecorder.Code != http.StatusOK {
+		t.Fatalf("teacher curriculum status = %d, want %d", teacherCurriculumRecorder.Code, http.StatusOK)
+	}
+	var teacherCurriculumJSON map[string]any
+	if err := json.NewDecoder(teacherCurriculumRecorder.Body).Decode(&teacherCurriculumJSON); err != nil {
+		t.Fatalf("decode teacher curriculum: %v", err)
+	}
+	if teacherCurriculumJSON["course_id"] != "course-algebra-foundations" {
+		t.Fatalf("teacher curriculum course = %v", teacherCurriculumJSON["course_id"])
 	}
 	teacherProfileForm := url.Values{"name": {"Maya Chen"}, "department": {"Mathematics"}, "teaching_title": {"Professor"}}
 	teacherProfileRequest := httptest.NewRequest(http.MethodPost, "/profile", strings.NewReader(teacherProfileForm.Encode()))

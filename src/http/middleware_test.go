@@ -25,6 +25,26 @@ func TestMiddlewareAddsRequestAndSecurityHeaders(t *testing.T) {
 	if response.Header().Get("X-Frame-Options") != "DENY" {
 		t.Fatal("missing frame protection header")
 	}
+	if response.Header().Get("Content-Security-Policy") == "" {
+		t.Fatal("missing content security policy")
+	}
+	if response.Header().Get("Cross-Origin-Opener-Policy") != "same-origin" {
+		t.Fatal("missing cross-origin opener policy")
+	}
+}
+
+func TestMiddlewareReplacesUnsafeRequestID(t *testing.T) {
+	handler := Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set("X-Request-ID", "bad value")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Header().Get("X-Request-ID") == "bad value" {
+		t.Fatal("unsafe request ID was trusted")
+	}
 }
 
 func TestMiddlewareRecoversFromPanic(t *testing.T) {

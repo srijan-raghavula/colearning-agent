@@ -178,7 +178,8 @@ func (c AuthController) Me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]any{"user": nil})
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "authentication required"})
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{

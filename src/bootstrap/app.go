@@ -259,6 +259,50 @@ func NewApp() (App, error) {
 				}
 			}
 		}
+		if modules, listErr := sqlRepo.ListModules(context.Background(), course.ID); listErr != nil {
+			return App{}, fmt.Errorf("read seed curriculum: %w", listErr)
+		} else if len(modules) == 0 {
+			seedModules := []domain.CourseModule{
+				{ID: "module-algebra-core", CourseID: course.ID, Title: "Core relationships", Description: "Build the language of equations and graphs.", Order: 1},
+				{ID: "module-algebra-practice", CourseID: course.ID, Title: "Reasoning in context", Description: "Use relationships together and explain what they mean.", Order: 2},
+			}
+			seedChapters := []domain.CourseChapter{
+				{ID: "chapter-equations", CourseID: course.ID, ModuleID: "module-algebra-core", Title: "Equations and graphs", Description: "Move between symbolic and visual representations.", Order: 1},
+				{ID: "chapter-systems", CourseID: course.ID, ModuleID: "module-algebra-practice", Title: "Systems and quadratics", Description: "Extend the same ideas to richer relationships.", Order: 1},
+			}
+			seedLessons := []domain.CourseLesson{
+				{ID: "lesson-linear-equations", CourseID: course.ID, ChapterID: "chapter-equations", Title: "Linear equations", Summary: "Find the unknown that makes a relationship true.", Order: 1},
+				{ID: "lesson-graphing-equations", CourseID: course.ID, ChapterID: "chapter-equations", Title: "Graphing equations", Summary: "See equations as lines and read their relationships visually.", Order: 2},
+				{ID: "lesson-systems-equations", CourseID: course.ID, ChapterID: "chapter-systems", Title: "Systems of equations", Summary: "Use two relationships together to find a shared solution.", Order: 1},
+				{ID: "lesson-quadratics", CourseID: course.ID, ChapterID: "chapter-systems", Title: "Quadratic thinking", Summary: "Recognize curved relationships and reason about their roots.", Order: 2},
+			}
+			seedContent := []domain.LessonContent{
+				{ID: "content-linear-note", CourseID: course.ID, LessonID: "lesson-linear-equations", Kind: "lesson_note", Title: "Balance first, then verify", Body: materials[0].Body, Order: 1, Published: true},
+				{ID: "content-graphing-note", CourseID: course.ID, LessonID: "lesson-graphing-equations", Kind: "lesson_note", Title: "Equations as stories", Body: materials[2].Body, Order: 1, Published: true},
+				{ID: "content-systems-note", CourseID: course.ID, LessonID: "lesson-systems-equations", Kind: "lesson_note", Title: "Look for the shared point", Body: materials[3].Body, Order: 1, Published: true},
+				{ID: "content-quadratics-reference", CourseID: course.ID, LessonID: "lesson-quadratics", Kind: "reference", Title: "Introduction to quadratics", Body: materials[4].Body, Order: 1, Published: true},
+			}
+			for _, module := range seedModules {
+				if err := sqlRepo.SaveModule(context.Background(), module); err != nil {
+					return App{}, fmt.Errorf("seed curriculum module %q: %w", module.ID, err)
+				}
+			}
+			for _, chapter := range seedChapters {
+				if err := sqlRepo.SaveChapter(context.Background(), chapter); err != nil {
+					return App{}, fmt.Errorf("seed curriculum chapter %q: %w", chapter.ID, err)
+				}
+			}
+			for _, lesson := range seedLessons {
+				if err := sqlRepo.SaveLesson(context.Background(), lesson); err != nil {
+					return App{}, fmt.Errorf("seed curriculum lesson %q: %w", lesson.ID, err)
+				}
+			}
+			for _, content := range seedContent {
+				if err := sqlRepo.SaveLessonContent(context.Background(), content); err != nil {
+					return App{}, fmt.Errorf("seed lesson content %q: %w", content.ID, err)
+				}
+			}
+		}
 		for _, studentID := range []string{"S-001", "S-002"} {
 			if err := sqlRepo.EnsureApprovedEnrollment(context.Background(), studentID, course.ID); err != nil {
 				return App{}, fmt.Errorf("seed enrollment for %q: %w", studentID, err)
@@ -376,7 +420,7 @@ func NewApp() (App, error) {
 			Faculty:     controller.NewFacultyController(facultyPortal, renderer),
 			Learning:    controller.NewLearningController(studentLearningPortal, teacherLearningPortal, renderer).WithAccountLookup(sqlRepo).WithEnrollmentStore(sqlRepo).WithCourseCatalog(sqlRepo),
 			Courses:     controller.NewCourseController(renderer, contentRepo, sqlRepo, sqlRepo, sqlRepo),
-			Curriculum:  controller.NewCurriculumController(renderer, sqlRepo, sqlRepo, contentRepo, curriculumAuthoring),
+			Curriculum:  controller.NewCurriculumController(renderer, sqlRepo, sqlRepo, contentRepo, curriculumAuthoring, sqlRepo),
 			Enrollments: sqlRepo,
 			Renderer:    renderer,
 			Accounts:    accounts,

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -25,15 +26,16 @@ type curriculumSavePayload struct {
 }
 
 type CurriculumController struct {
-	renderer   *view.Renderer
-	courses    courseCatalog
-	curriculum repository.CurriculumRepository
-	content    repository.LearningContentRepository
-	authoring  agentic.CurriculumAuthoringAgent
+	renderer    *view.Renderer
+	courses     courseCatalog
+	curriculum  repository.CurriculumRepository
+	content     repository.LearningContentRepository
+	authoring   agentic.CurriculumAuthoringAgent
+	enrollments CourseEnrollmentStore
 }
 
-func NewCurriculumController(renderer *view.Renderer, courses courseCatalog, curriculum repository.CurriculumRepository, content repository.LearningContentRepository, authoring agentic.CurriculumAuthoringAgent) CurriculumController {
-	return CurriculumController{renderer: renderer, courses: courses, curriculum: curriculum, content: content, authoring: authoring}
+func NewCurriculumController(renderer *view.Renderer, courses courseCatalog, curriculum repository.CurriculumRepository, content repository.LearningContentRepository, authoring agentic.CurriculumAuthoringAgent, enrollments CourseEnrollmentStore) CurriculumController {
+	return CurriculumController{renderer: renderer, courses: courses, curriculum: curriculum, content: content, authoring: authoring, enrollments: enrollments}
 }
 
 type chapterView struct {
@@ -49,6 +51,86 @@ type lessonView struct {
 type moduleView struct {
 	Module   domain.CourseModule
 	Chapters []chapterView
+}
+
+func (c CurriculumController) StructureJSON(w http.ResponseWriter, r *http.Request) {
+	identity, ok := auth.IdentityFromContext(r.Context())
+	if !ok {
+		writeAPIError(w, http.StatusUnauthorized, fmt.Errorf("identity required"))
+		return
+	}
+	course, found, err := c.courses.FindCourse(r.Context(), r.PathValue("course_id"))
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, fmt.Errorf("could not load course"))
+		return
+	}
+	if !found {
+		writeAPIError(w, http.StatusNotFound, fmt.Errorf("course not found"))
+		return
+	}
+	teacher := identity.Role == "teacher" || identity.Role == "faculty"
+	if teacher {
+		if course.TeacherID != identity.ID {
+			writeAPIError(w, http.StatusForbidden, fmt.Errorf("course access denied"))
+			return
+		}
+	} else if c.enrollments != nil {
+		enrollment, enrolled, enrollmentErr := c.enrollments.FindCourseEnrollment(r.Context(), identity.ID, course.ID)
+		if enrollmentErr != nil {
+			writeAPIError(w, http.StatusInternalServerError, fmt.Errorf("could not verify enrollment"))
+			return
+		}
+		if !enrolled || enrollment.Status != domain.EnrollmentApproved {
+			writeAPIError(w, http.StatusForbidden, fmt.Errorf("approved enrollment required"))
+			return
+		}
+	}
+
+	structure, err := c.curriculumJSON(r.Context(), course.ID, teacher)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, structure)
+}
+
+func (c CurriculumController) curriculumJSON(ctx context.Context, courseID string, includeDrafts bool) (apiCurriculum, error) {
+	modules, err := c.curriculum.ListModules(ctx, courseID)
+	if err != nil {
+		return apiCurriculum{}, fmt.Errorf("could not load modules")
+	}
+	result := apiCurriculum{CourseID: courseID, Modules: make([]apiCurriculumModule, 0, len(modules))}
+	for _, module := range modules {
+		item := apiCurriculumModule{ID: module.ID, Title: module.Title, Description: module.Description, Order: module.Order}
+		chapters, err := c.curriculum.ListChapters(ctx, module.ID)
+		if err != nil {
+			return apiCurriculum{}, fmt.Errorf("could not load chapters")
+		}
+		for _, chapter := range chapters {
+			chapterItem := apiCurriculumChapter{ID: chapter.ID, Title: chapter.Title, Description: chapter.Description, Order: chapter.Order}
+			lessons, err := c.curriculum.ListLessons(ctx, chapter.ID)
+			if err != nil {
+				return apiCurriculum{}, fmt.Errorf("could not load lessons")
+			}
+			for _, lesson := range lessons {
+				lessonItem := apiCurriculumLesson{ID: lesson.ID, Title: lesson.Title, Summary: lesson.Summary, Order: lesson.Order}
+				contents, err := c.curriculum.ListLessonContents(ctx, lesson.ID)
+				if err != nil {
+					return apiCurriculum{}, fmt.Errorf("could not load lesson content")
+				}
+				for _, content := range contents {
+					if !includeDrafts && !content.Published {
+						continue
+					}
+					lessonItem.Contents = append(lessonItem.Contents, apiCurriculumContent{ID: content.ID, Kind: content.Kind, Title: content.Title, Body: content.Body, Published: content.Published})
+				}
+				chapterItem.Lessons = append(chapterItem.Lessons, lessonItem)
+			}
+			item.Chapters = append(item.Chapters, chapterItem)
+		}
+		result.Modules = append(result.Modules, item)
+	}
+	return result, nil
 }
 
 func (c CurriculumController) Page(w http.ResponseWriter, r *http.Request) {

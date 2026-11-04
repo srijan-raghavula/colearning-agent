@@ -111,11 +111,14 @@ The stable versioned contract is documented in [`docs/api.md`](docs/api.md).
 ```text
 GET  /healthz
 GET  /api/v1/student/dashboard
+GET  /api/v1/student/courses/{course_id}/curriculum
 POST /api/v1/student/sessions
 GET  /api/v1/student/sessions/{session_id}
 POST /api/v1/student/sessions/{session_id}/turns
 POST /api/v1/student/sessions/{session_id}/understanding-checks
 GET  /api/v1/teacher/dashboard
+GET  /api/v1/teacher/courses/{course_id}/curriculum
+POST /api/v1/teacher/courses
 POST /api/v1/teacher/materials
 PUT  /api/v1/teacher/courses/{course_id}/tutor-policy
 ```

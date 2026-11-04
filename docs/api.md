@@ -43,6 +43,18 @@ Returns a `StudentLearningDashboard` containing:
 - current objective
 - learner statistics
 
+The browser client can load the selected course notebook separately:
+
+```http
+GET /api/v1/student/courses/{course_id}/curriculum
+GET /api/v1/teacher/courses/{course_id}/curriculum
+```
+
+The response is a nested `course_id` plus `modules`, `chapters`, `lessons`,
+and `contents` tree. Student callers must have an approved enrollment and
+receive published lesson content only. Teacher callers must own the course
+and receive drafts as well as published content.
+
 ## Start or resume a session
 
 ```http
@@ -171,6 +183,19 @@ Pass `course_id` as a query parameter to load a specific owned course.
 The student dashboard also returns enrolled course choices in `courses`,
 including teacher identity and enrollment status, so clients can switch among
 approved courses without guessing from a single default.
+
+## Course curriculum
+
+```http
+GET /api/v1/student/courses/{course_id}/curriculum
+GET /api/v1/teacher/courses/{course_id}/curriculum
+```
+
+Returns the nested course notebook structure: modules contain chapters,
+chapters contain lessons, and lessons contain content items. Student responses
+include published content only and require approved enrollment; teacher
+responses include drafts and require course ownership. This stable tree is
+intended for sidebar clients and future agent/tool integrations.
 
 ## Create a teacher course
 
