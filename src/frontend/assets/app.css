@@ -86,6 +86,36 @@ button { cursor: pointer; }
 .metrics b { display: block; margin-bottom: 6px; font-size: 34px; letter-spacing: -.07em; }
 .metrics span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .grid-two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 18px; }
+.workspace-shell { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 22px; align-items: start; }
+.workspace-main { min-width: 0; display: grid; gap: 18px; }
+.curriculum-sidebar { position: sticky; top: 104px; padding: 20px 16px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.9); box-shadow: var(--shadow-small); }
+.sidebar-heading { display: flex; justify-content: space-between; gap: 10px; align-items: start; padding: 0 4px 14px; border-bottom: 1px solid var(--line); }
+.sidebar-heading h2 { margin: 0; font-size: 19px; letter-spacing: -.04em; }
+.sidebar-heading .eyebrow { margin-bottom: 5px; }
+.sidebar-count { color: var(--soft); font-size: 10px; white-space: nowrap; }
+.sidebar-tree { padding: 10px 0; }
+.sidebar-module { border-bottom: 1px solid #edf0f4; padding: 4px 0 8px; }
+.sidebar-module:last-child { border-bottom: 0; }
+.sidebar-module summary { display: flex; align-items: center; gap: 9px; padding: 9px 5px; cursor: pointer; list-style: none; font-size: 12px; font-weight: 800; }
+.sidebar-module summary::-webkit-details-marker { display: none; }
+.sidebar-module summary:before { content: "⌄"; color: var(--soft); font-size: 13px; }
+.sidebar-module:not([open]) summary:before { content: "›"; }
+.sidebar-index { color: var(--teal); font-size: 10px; }
+.sidebar-chapter { padding: 4px 0 7px 25px; }
+.sidebar-chapter small { display: block; margin: 3px 0 5px; color: var(--soft); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.sidebar-lesson { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 7px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; text-align: left; font-size: 12px; }
+.sidebar-lesson:hover, .sidebar-lesson:focus-visible, .sidebar-lesson.active { color: var(--teal-dark); background: var(--teal-pale); }
+.lesson-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #c7d0dc; }
+.sidebar-lesson.active .lesson-dot, .sidebar-lesson:hover .lesson-dot { background: var(--teal); }
+.sidebar-empty { padding: 22px 6px; color: var(--muted); font-size: 12px; }
+.sidebar-empty span { display: block; margin-top: 5px; font-size: 11px; }
+.sidebar-action { width: 100%; margin-top: 8px; font-size: 11px; }
+.lesson-detail-card { padding: 25px 28px; }
+.lesson-detail h2 { margin: 3px 0 7px; font-size: 25px; letter-spacing: -.05em; }
+.lesson-content-cards { display: grid; gap: 10px; margin-top: 18px; }
+.lesson-content-cards article { padding: 15px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfd; }
+.lesson-content-cards h3 { margin: 9px 0 5px; font-size: 14px; }
+.lesson-content-cards p { margin: 0; color: var(--muted); font-size: 12px; white-space: pre-wrap; }
 .card { padding: 30px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.88); box-shadow: 0 10px 35px rgba(31,48,72,.025); }
 .card h2 { margin: 0 0 7px; font-size: 19px; letter-spacing: -.03em; }
 .card-head { display: flex; justify-content: space-between; }
@@ -165,6 +195,9 @@ button { cursor: pointer; }
   .metrics, .grid-two, .workspace { grid-template-columns: 1fr 1fr; }
   .workspace { grid-template-columns: 1fr; }
   .setup-grid { grid-template-columns: 1fr; }
+  .workspace-shell { grid-template-columns: 1fr; }
+  .curriculum-sidebar { position: static; }
+  .sidebar-tree { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; }
 }
 @media (max-width: 620px) {
   .topbar { height: 68px; padding: 0 16px; }
@@ -185,6 +218,7 @@ button { cursor: pointer; }
   .resume { display: block; padding: 28px; }
   .resume .button { margin-top: 22px; }
   .card { padding: 23px; }
+  .sidebar-tree { grid-template-columns: 1fr; }
   .auth-card { padding: 30px 23px; }
   .composer > div { align-items: stretch; flex-direction: column; }
   .composer select { width: 100%; }

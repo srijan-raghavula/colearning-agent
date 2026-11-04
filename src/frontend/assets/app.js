@@ -1,19 +1,46 @@
 const app = document.querySelector("#app");
-const state = { user: null, dashboard: null, teacherDashboard: null, session: null, turns: [], loading: false };
+const state = { user: null, dashboard: null, teacherDashboard: null, curriculum: { modules: [] }, session: null, turns: [], loading: false };
 
 const esc = (value = "") => String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const initials = name => name.split(/\s+/).filter(Boolean).map(part => part[0]).slice(0, 2).join("").toUpperCase() || "?";
 const modeLabel = mode => ({ guided: "Guided", socratic: "Socratic", direct: "Direct", practice: "Practice", hint: "Hint", diagnostic: "Diagnostic" }[mode] || mode);
+const curriculumLessons = curriculum => (curriculum?.modules || []).flatMap(module => (module.chapters || []).flatMap(chapter => chapter.lessons || []));
+
+function curriculumSidebar(curriculum, courseID, role, activeLessonID = "") {
+  const modules = curriculum?.modules || [];
+  return `<aside class="curriculum-sidebar"><div class="sidebar-heading"><div><p class="eyebrow">Course notebook</p><h2>Contents</h2></div><span class="sidebar-count">${curriculumLessons(curriculum).length} lessons</span></div><div class="sidebar-tree">${modules.length ? modules.map(module => `<details class="sidebar-module" open><summary><span class="sidebar-index">${String(module.order).padStart(2, "0")}</span><span>${esc(module.title)}</span></summary>${(module.chapters || []).map(chapter => `<div class="sidebar-chapter"><small>${esc(chapter.title)}</small>${(chapter.lessons || []).map(lesson => role === "teacher" ? `<button class="sidebar-lesson ${lesson.id === activeLessonID ? "active" : ""}" type="button" data-teacher-curriculum="${esc(courseID)}"><span class="lesson-dot"></span><span>${esc(lesson.title)}</span></button>` : `<button class="sidebar-lesson ${lesson.id === activeLessonID ? "active" : ""}" type="button" data-open-lesson="${esc(lesson.id)}"><span class="lesson-dot"></span><span>${esc(lesson.title)}</span></button>`).join("")}</div>`).join("")}</details>`).join("") : `<div class="sidebar-empty"><b>No curriculum yet</b><span>Your teacher's modules and lessons will appear here.</span></div>`}</div>${role === "teacher" && courseID ? `<a class="button secondary sidebar-action" href="/teacher/courses/${encodeURIComponent(courseID)}/curriculum">Open Curriculum Studio →</a>` : ""}</aside>`;
+}
+
+function lessonDetail(curriculum, lessonID) {
+  const lesson = curriculumLessons(curriculum).find(item => item.id === lessonID);
+  if (!lesson) return `<div class="empty"><b>Select a lesson</b><span>Choose a lesson from the course notebook to see its content.</span></div>`;
+  return `<div class="lesson-detail"><p class="eyebrow">Lesson ${String(lesson.order).padStart(2, "0")}</p><h2>${esc(lesson.title)}</h2><p class="muted">${esc(lesson.summary || "Work through this lesson at your own pace.")}</p>${lesson.contents?.length ? `<div class="lesson-content-cards">${lesson.contents.map(content => `<article><span class="tag">${esc(content.kind.replaceAll("_", " "))}</span><h3>${esc(content.title)}</h3><p>${esc(content.body)}</p></article>`).join("")}</div>` : `<div class="notice">Lesson content is being prepared by your teacher.</div>`}</div>`;
+}
+
+function bindCurriculum(courseID, curriculum) {
+  document.querySelectorAll("[data-open-lesson]").forEach(button => button.addEventListener("click", () => {
+    const lessonID = button.dataset.openLesson;
+    document.querySelectorAll("[data-open-lesson]").forEach(item => item.classList.toggle("active", item === button));
+    const detail = document.querySelector("#lesson-detail");
+    if (detail) detail.innerHTML = lessonDetail(curriculum, lessonID);
+    history.replaceState({}, "", `/app/student?course_id=${encodeURIComponent(courseID)}&lesson_id=${encodeURIComponent(lessonID)}`);
+  }));
+  document.querySelectorAll("[data-teacher-curriculum]").forEach(button => button.addEventListener("click", () => location.assign(`/teacher/courses/${encodeURIComponent(button.dataset.teacherCurriculum)}/curriculum`)));
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, { credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json", ...(options.headers || {}) }, ...options });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(body.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   return body;
 }
 
 function shell(content, title = "CoLearn") {
-  document.title = `${title} · CoLearn`;
+  document.title = title === "CoLearn" ? "CoLearn" : `${title} · CoLearn`;
   const navigation = state.user?.role === "teacher"
     ? `<nav class="role-nav" aria-label="Teacher workspace"><a href="/app/teacher">Class overview</a><a href="/app/teacher#course-setup">Course setup</a></nav>`
     : `<nav class="role-nav" aria-label="Student workspace"><a href="/app/student">Overview</a><a href="/app/student/workspace">Learning space</a></nav>`;
@@ -42,17 +69,29 @@ function authPage(signup = false) {
 }
 
 async function loadIdentity() {
-  try { state.user = (await api("/api/auth/me")).user; } catch { state.user = null; }
+  try {
+    state.user = (await api("/api/auth/me")).user;
+  } catch (error) {
+    if (error.status === 401) {
+      state.user = null;
+      return;
+    }
+    throw error;
+  }
 }
 
 async function studentDashboard(courseID = new URLSearchParams(location.search).get("course_id")) {
   const data = await api(`/api/v1/student/dashboard${courseID ? `?course_id=${encodeURIComponent(courseID)}` : ""}`); state.dashboard = data;
+  state.curriculum = await api(`/api/v1/student/courses/${encodeURIComponent(data.course.id)}/curriculum`);
   const d = data, progress = d.featured_progress || {};
   const availableCourses = (d.courses || []).filter(course => course.status === "approved");
+  const selectedLessonID = new URLSearchParams(location.search).get("lesson_id") || curriculumLessons(state.curriculum)[0]?.id || "";
   shell(`<div class="heading"><div><p class="eyebrow">${esc(d.course.subject)} · ${esc(d.course.title)}</p><h1>Good morning, ${esc(d.student_name)}</h1><p class="lede">Your next small step is ready. Keep the conversation going.</p></div>${availableCourses.length > 1 ? `<label class="course-picker">Learning space<select id="student-course-picker">${availableCourses.map(course => `<option value="${esc(course.course_id)}" ${course.course_id === d.course.id ? "selected" : ""}>${esc(course.course_title)} · ${esc(course.teacher_name)}</option>`).join("")}</select></label>` : ""}</div>
+    <div class="workspace-shell">${curriculumSidebar(state.curriculum, d.course.id, "student", selectedLessonID)}<section class="workspace-main"><div id="lesson-detail" class="card lesson-detail-card">${lessonDetail(state.curriculum, selectedLessonID)}</div>
     <section class="resume"><div><p class="eyebrow">Recommended next lesson</p><h2>${esc(d.featured_concept.title)}</h2><p>${esc(d.featured_concept.summary)}</p><b>${progress.confidence}% confidence</b><small>Next: ${esc(progress.next_action)}</small></div><button class="button light" data-start="${esc(d.featured_concept.id)}">${d.active_session ? "Resume conversation" : "Start this lesson"} →</button></section>
     <section class="metrics"><div><b>${d.stats.concepts_started}</b><span>Concepts started</span></div><div><b>${d.stats.concepts_secure}</b><span>Secure concepts</span></div><div><b>${d.stats.learning_minutes}</b><span>Learning minutes</span></div><div><b>${d.turns.length}</b><span>Recent turns</span></div></section>
-    <section class="grid-two"><article class="card"><div class="card-head"><div><h2>Your learning path</h2><p class="muted">Choose a lesson from the primary action above. This path shows your progress at a glance.</p></div></div><div class="path">${d.concepts.map(card => `<div class="path-row path-row-static"><span class="number">${String(card.concept.order).padStart(2, "0")}</span><span><b>${esc(card.concept.title)}</b><small>${esc(card.concept.summary)}</small></span><strong class="status ${esc(card.progress.status)}">${card.progress.confidence}%</strong></div>`).join("")}</div></article><aside class="card"><h2>Teacher context</h2><p class="teacher-name">${esc(d.course.teacher_name)}</p><p class="muted">${esc(d.course.description)}</p><span class="tag">${esc(d.policy.source_policy)}</span></aside></section>`);
+    <section class="grid-two"><article class="card"><div class="card-head"><div><h2>Your learning path</h2><p class="muted">Choose a lesson from the primary action above. This path shows your progress at a glance.</p></div></div><div class="path">${d.concepts.map(card => `<div class="path-row path-row-static"><span class="number">${String(card.concept.order).padStart(2, "0")}</span><span><b>${esc(card.concept.title)}</b><small>${esc(card.concept.summary)}</small></span><strong class="status ${esc(card.progress.status)}">${card.progress.confidence}%</strong></div>`).join("")}</div></article><aside class="card"><h2>Teacher context</h2><p class="teacher-name">${esc(d.course.teacher_name)}</p><p class="muted">${esc(d.course.description)}</p><span class="tag">${esc(d.policy.source_policy)}</span></aside></section></section></div>`);
+  bindCurriculum(d.course.id, state.curriculum);
   document.querySelectorAll("[data-start]").forEach(button => button.addEventListener("click", () => startSession(button.dataset.start)));
   document.querySelector("#student-course-picker")?.addEventListener("change", event => {
     history.replaceState({}, "", `/app/student?course_id=${encodeURIComponent(event.target.value)}`);
@@ -90,13 +129,16 @@ async function checkUnderstanding() { try { const result = await api(`/api/v1/st
 
 async function teacherDashboard(courseID = new URLSearchParams(location.search).get("course_id")) {
   const d = await api(`/api/v1/teacher/dashboard${courseID ? `?course_id=${encodeURIComponent(courseID)}` : ""}`); state.teacherDashboard = d;
+  state.curriculum = d.course.id ? await api(`/api/v1/teacher/courses/${encodeURIComponent(d.course.id)}/curriculum`) : { modules: [] };
   const concepts = d.concepts || [];
   const firstConcept = concepts[0]?.concept?.id || "";
   const materials = d.materials || [];
   shell(`<div class="heading"><div><p class="eyebrow">Teacher workspace · ${esc(d.course.subject || "Your course")}</p><h1>${esc(d.course.title || "Set up your course")}</h1><p class="lede">One place to understand learner momentum and keep the tutor grounded in your teaching.</p></div>${(d.courses || []).length > 1 ? `<label class="course-picker">Course<select id="teacher-course-picker">${d.courses.map(course => `<option value="${esc(course.id)}" ${course.id === d.course.id ? "selected" : ""}>${esc(course.title)}</option>`).join("")}</select></label>` : ""}</div>
+    <div class="workspace-shell">${curriculumSidebar(state.curriculum, d.course.id, "teacher")}<section class="workspace-main">
     ${!d.course.id ? `<section class="card empty-state"><h2>Create your first course</h2><p>Give learners a clear starting point, then add concepts and teacher-grounded material.</p><form id="course-form" class="form-grid course-form"><label>Course title<input name="title" required maxlength="160" placeholder="e.g. Algebra foundations"></label><label>Subject<input name="subject" required maxlength="100" placeholder="e.g. Mathematics"></label><label>Description<textarea name="description" rows="4" maxlength="4000" placeholder="What will learners understand?"></textarea><button class="button primary" type="submit">Create course</button><p class="form-error" id="course-error" role="status"></p></form></section>` : `<section class="metrics"><div><b>${d.stats.active_learners}</b><span>Active learners</span></div><div><b>${d.stats.concepts_published}</b><span>Published concepts</span></div><div><b>${d.stats.average_confidence}%</b><span>Average confidence</span></div><div><b>${d.stats.needs_support}</b><span>Needs support</span></div></section>
     <section class="grid-two" id="overview"><article class="card"><div class="card-head"><div><h2>Concept health</h2><p class="muted">Where the class is building confidence.</p></div></div><div class="path">${concepts.length ? concepts.map(card => `<div class="path-row"><span class="number">${String(card.concept.order).padStart(2, "0")}</span><span><b>${esc(card.concept.title)}</b><small>${esc(card.concept.summary)}</small></span><strong class="status ${esc(card.progress.status)}">${card.progress.confidence}%</strong></div>`).join("") : `<div class="empty"><b>No concepts yet</b><span>Add course content to create the learning path.</span></div>`}</div></article><article class="card"><h2>Support needed</h2><p class="muted">Signals worth your attention, not grades.</p>${d.support_needed?.length ? d.support_needed.map(item => `<div class="support"><b>${esc(item.student_name)}</b><span>${esc(item.concept_title)} · ${item.confidence}%</span><small>${esc(item.next_action)}</small></div>`).join("") : `<div class="empty"><b>No urgent support signals</b><span>Your learners are moving steadily.</span></div>`}</article></section>
-    <section class="teacher-setup" id="course-setup"><article class="card"><div class="card-head"><div><h2>Course setup</h2><p class="muted">Keep the tutor’s context current without leaving this workspace.</p></div><span class="tag">${materials.length} materials</span></div>${firstConcept ? "" : `<div class="setup-empty"><b>Build the course outline first</b><span>Concepts and lessons are required before tutor sources can be attached.</span><a class="button secondary" href="/teacher/courses/${encodeURIComponent(d.course.id)}/curriculum">Open Curriculum Studio →</a></div>`}<div class="setup-grid" ${firstConcept ? "" : "hidden"}><form id="material-form" class="form-grid"><h3>Publish material</h3><input type="hidden" name="course_id" value="${esc(d.course.id)}"><label>Concept<select name="concept_id" required>${concepts.map(card => `<option value="${esc(card.concept.id)}">${esc(card.concept.title)}</option>`).join("")}</select></label><label>Title<input name="title" required maxlength="200" placeholder="e.g. Worked example"></label><label>Explanation<textarea name="body" required rows="5" placeholder="What should the tutor use?"></textarea></label><label>Source reference<input name="source_ref" maxlength="500" placeholder="Optional link or citation"></label><button class="button primary" type="submit" ${firstConcept ? "" : "disabled"}>Publish material</button><p class="form-error" id="material-error" role="status"></p></form><form id="policy-form" class="form-grid"><h3>Tutor policy</h3><label>Default mode<select name="default_mode">${(d.policy.allowed_modes || []).map(mode => `<option value="${esc(mode)}" ${mode === d.policy.default_mode ? "selected" : ""}>${modeLabel(mode)}</option>`).join("")}</select></label><label>Source policy<input name="source_policy" value="${esc(d.policy.source_policy || "")}" maxlength="200"></label><label class="checkbox-field"><input type="checkbox" name="allow_external_sources" ${d.policy.allow_external_sources ? "checked" : ""}> Allow labeled external sources</label><button class="button secondary" type="submit">Save policy</button><p class="form-error" id="policy-error" role="status"></p></form></div><div class="material-list">${materials.length ? materials.map(material => `<div class="material-row"><div><b>${esc(material.title)}</b><span>${esc(material.source.title)} · v${material.version}</span></div><span class="tag">${material.published ? "Published" : "Draft"}</span></div>`).join("") : `<div class="empty"><b>No materials published</b><span>Give the tutor a source of truth for this course.</span></div>`}</div></article></section>`}`);
+    <section class="teacher-setup" id="course-setup"><article class="card"><div class="card-head"><div><h2>Course setup</h2><p class="muted">Keep the tutor’s context current without leaving this workspace.</p></div><span class="tag">${materials.length} materials</span></div>${firstConcept ? "" : `<div class="setup-empty"><b>Build the course outline first</b><span>Concepts and lessons are required before tutor sources can be attached.</span><a class="button secondary" href="/teacher/courses/${encodeURIComponent(d.course.id)}/curriculum">Open Curriculum Studio →</a></div>`}<div class="setup-grid" ${firstConcept ? "" : "hidden"}><form id="material-form" class="form-grid"><h3>Publish material</h3><input type="hidden" name="course_id" value="${esc(d.course.id)}"><label>Concept<select name="concept_id" required>${concepts.map(card => `<option value="${esc(card.concept.id)}">${esc(card.concept.title)}</option>`).join("")}</select></label><label>Title<input name="title" required maxlength="200" placeholder="e.g. Worked example"></label><label>Explanation<textarea name="body" required rows="5" placeholder="What should the tutor use?"></textarea></label><label>Source reference<input name="source_ref" maxlength="500" placeholder="Optional link or citation"></label><button class="button primary" type="submit" ${firstConcept ? "" : "disabled"}>Publish material</button><p class="form-error" id="material-error" role="status"></p></form><form id="policy-form" class="form-grid"><h3>Tutor policy</h3><label>Default mode<select name="default_mode">${(d.policy.allowed_modes || []).map(mode => `<option value="${esc(mode)}" ${mode === d.policy.default_mode ? "selected" : ""}>${modeLabel(mode)}</option>`).join("")}</select></label><label>Source policy<input name="source_policy" value="${esc(d.policy.source_policy || "")}" maxlength="200"></label><label class="checkbox-field"><input type="checkbox" name="allow_external_sources" ${d.policy.allow_external_sources ? "checked" : ""}> Allow labeled external sources</label><button class="button secondary" type="submit">Save policy</button><p class="form-error" id="policy-error" role="status"></p></form></div><div class="material-list">${materials.length ? materials.map(material => `<div class="material-row"><div><b>${esc(material.title)}</b><span>${esc(material.source.title)} · v${material.version}</span></div><span class="tag">${material.published ? "Published" : "Draft"}</span></div>`).join("") : `<div class="empty"><b>No materials published</b><span>Give the tutor a source of truth for this course.</span></div>`}</div></article></section></section></div>`}`);
+  bindCurriculum(d.course.id, state.curriculum);
   document.querySelector("#material-form")?.addEventListener("submit", publishMaterial);
   document.querySelector("#policy-form")?.addEventListener("submit", savePolicy);
   document.querySelector("#course-form")?.addEventListener("submit", createCourse);
@@ -149,5 +191,5 @@ async function route() {
   } catch (err) { shell(`<section class="error-state"><h1>Something went wrong</h1><p>${esc(err.message)}</p><a class="button secondary" href="/">Return home</a></section>`); }
 }
 window.addEventListener("popstate", route);
-document.addEventListener("click", event => { const link = event.target.closest("a"); if (link?.origin === location.origin && !link.target && !link.pathname.startsWith("/api/")) { event.preventDefault(); history.pushState({}, "", link.href); route(); } });
+document.addEventListener("click", event => { const link = event.target.closest("a"); if (link?.origin === location.origin && !link.target && !link.pathname.startsWith("/api/") && !link.pathname.startsWith("/teacher/courses/")) { event.preventDefault(); history.pushState({}, "", link.href); route(); } });
 route();

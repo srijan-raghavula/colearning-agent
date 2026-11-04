@@ -168,7 +168,7 @@ type apiEvidence struct {
 }
 
 type apiTeacherDashboard struct {
-	Courses        []apiCourse       `json:"courses"`
+	Courses        []apiCourse      `json:"courses"`
 	Course         apiCourse        `json:"course"`
 	Concepts       []apiConceptCard `json:"concepts"`
 	Materials      []apiMaterial    `json:"materials"`
@@ -176,6 +176,43 @@ type apiTeacherDashboard struct {
 	Stats          apiTeacherStats  `json:"stats"`
 	SupportNeeded  []apiSupport     `json:"support_needed"`
 	RecentEvidence []apiEvidence    `json:"recent_evidence"`
+}
+
+type apiCurriculumContent struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	Published bool   `json:"published"`
+}
+
+type apiCurriculumLesson struct {
+	ID       string                 `json:"id"`
+	Title    string                 `json:"title"`
+	Summary  string                 `json:"summary"`
+	Order    int                    `json:"order"`
+	Contents []apiCurriculumContent `json:"contents"`
+}
+
+type apiCurriculumChapter struct {
+	ID          string                `json:"id"`
+	Title       string                `json:"title"`
+	Description string                `json:"description"`
+	Order       int                   `json:"order"`
+	Lessons     []apiCurriculumLesson `json:"lessons"`
+}
+
+type apiCurriculumModule struct {
+	ID          string                 `json:"id"`
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+	Order       int                    `json:"order"`
+	Chapters    []apiCurriculumChapter `json:"chapters"`
+}
+
+type apiCurriculum struct {
+	CourseID string                `json:"course_id"`
+	Modules  []apiCurriculumModule `json:"modules"`
 }
 
 type apiTurnResult struct {

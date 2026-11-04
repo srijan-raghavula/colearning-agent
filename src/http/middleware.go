@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 )
 
@@ -21,6 +22,9 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; base-uri 'self'; frame-ancestors 'none'")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -28,7 +32,9 @@ func securityHeaders(next http.Handler) http.Handler {
 func requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-ID")
-		if id == "" || len(id) > 128 {
+		if id == "" || len(id) > 128 || strings.IndexFunc(id, func(r rune) bool {
+			return !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '-' && r != '_' && r != '.'
+		}) >= 0 {
 			var raw [12]byte
 			if _, err := rand.Read(raw[:]); err != nil {
 				id = "request-" + time.Now().UTC().Format("20060102150405.000000000")
