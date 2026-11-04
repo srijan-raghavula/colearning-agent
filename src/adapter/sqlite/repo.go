@@ -521,7 +521,7 @@ func (r *SQLiteRepo) UserCreate(ctx context.Context, id, email, hash, role, name
 }
 
 func (r *SQLiteRepo) CreateAccount(ctx context.Context, account auth.Account) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO users(id,email,password_hash,role,name) VALUES(?,?,?,?,?)`, account.ID, account.Email, account.PasswordHash, account.Role, account.Name)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO users(id,email,password_hash,role,name,academic_program,branch,semester,academic_year,department,teaching_title,auth_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, account.ID, account.Email, account.PasswordHash, account.Role, account.Name, account.AcademicProgram, account.Branch, account.Semester, account.AcademicYear, account.Department, account.TeachingTitle, 1)
 	return err
 }
 

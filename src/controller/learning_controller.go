@@ -10,10 +10,12 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/srijan-raghavula/colearning-agent/src/auth"
 	"github.com/srijan-raghavula/colearning-agent/src/domain"
+	"github.com/srijan-raghavula/colearning-agent/src/service"
 	"github.com/srijan-raghavula/colearning-agent/src/usecase"
 	"github.com/srijan-raghavula/colearning-agent/src/view"
 )
@@ -595,6 +597,30 @@ func displayTutorMode(policy domain.TutorPolicy, requested, current domain.Tutor
 
 func (c LearningController) StudentDashboardJSON(w http.ResponseWriter, r *http.Request) {
 	studentID := studentIDFromRequest(r)
+	var enrollments []domain.CourseEnrollment
+	if c.enrollments != nil {
+		var err error
+		enrollments, err = c.enrollments.ListStudentEnrollments(r.Context(), studentID)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, errors.New("could not load student courses"))
+			return
+		}
+		hasApprovedCourse := false
+		for _, enrollment := range enrollments {
+			if enrollment.Status == domain.EnrollmentApproved {
+				hasApprovedCourse = true
+				break
+			}
+		}
+		if !hasApprovedCourse && r.URL.Query().Get("course_id") == "" {
+			dashboard := domain.StudentLearningDashboard{StudentID: studentID}
+			if identity, ok := auth.IdentityFromContext(r.Context()); ok {
+				dashboard.StudentName = identity.Name
+			}
+			writeJSON(w, http.StatusOK, toAPIStudentDashboard(dashboard, enrollments))
+			return
+		}
+	}
 	dashboard, err := c.student.DashboardForCourse(r.Context(), studentID, r.URL.Query().Get("course_id"))
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err)
@@ -605,14 +631,6 @@ func (c LearningController) StudentDashboardJSON(w http.ResponseWriter, r *http.
 	}
 	if identity, ok := auth.IdentityFromContext(r.Context()); ok {
 		dashboard.StudentName = identity.Name
-	}
-	var enrollments []domain.CourseEnrollment
-	if c.enrollments != nil {
-		enrollments, err = c.enrollments.ListStudentEnrollments(r.Context(), studentID)
-		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, errors.New("could not load student courses"))
-			return
-		}
 	}
 	writeJSON(w, http.StatusOK, toAPIStudentDashboard(dashboard, enrollments))
 }
@@ -672,6 +690,7 @@ func (c LearningController) SendStudentTurnJSON(w http.ResponseWriter, r *http.R
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+
 	// Resolve the learner from the authenticated identity rather than trusting
 	// the JSON body's student_id field.
 	req.StudentID = studentIDFromRequest(r)
@@ -690,6 +709,50 @@ func (c LearningController) SendStudentTurnJSON(w http.ResponseWriter, r *http.R
 	result, err := c.student.Continue(r.Context(), req)
 	if err != nil {
 		writeAPIError(w, http.StatusBadGateway, errors.New("tutor is temporarily unavailable; retry the same message"))
+		return
+	}
+	writeJSON(w, http.StatusOK, toAPITurnResult(result))
+}
+
+func (c LearningController) RunStudentAgentJSON(w http.ResponseWriter, r *http.Request) {
+	identity, _ := auth.IdentityFromContext(r.Context())
+	var req struct {
+		CourseID  string           `json:"course_id,omitempty"`
+		SessionID string           `json:"session_id,omitempty"`
+		Mode      domain.TutorMode `json:"mode,omitempty"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	dashboard, err := c.student.DashboardForCourse(r.Context(), identity.ID, req.CourseID)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err)
+		return
+	}
+	sessionID := req.SessionID
+	if sessionID == "" && dashboard.ActiveSession != nil {
+		sessionID = dashboard.ActiveSession.ID
+	}
+	if sessionID == "" {
+		session, startErr := c.student.StartOrResume(r.Context(), usecase.StartLearningRequest{
+			StudentID: identity.ID, CourseID: dashboard.Course.ID,
+			ConceptID: dashboard.FeaturedConcept.ID, Mode: req.Mode,
+		})
+		if startErr != nil {
+			writeAPIError(w, http.StatusBadRequest, startErr)
+			return
+		}
+		sessionID = session.ID
+	}
+	if req.Mode == "" {
+		req.Mode = dashboard.Policy.DefaultMode
+	}
+	result, err := c.student.Continue(r.Context(), usecase.SendLearningTurnRequest{
+		StudentID: identity.ID, SessionID: sessionID, Mode: req.Mode,
+		Message: "Act as my learning coach. Inspect my current progress and course context, choose the most useful next learning action, explain it briefly, and end with one concrete question or activity for me.",
+	})
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toAPITurnResult(result))
@@ -926,6 +989,58 @@ func (c LearningController) PublishMaterialJSON(w http.ResponseWriter, r *http.R
 		return
 	}
 	material, err := c.teacher.PublishMaterial(r.Context(), req)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, toAPIMaterial(material))
+}
+
+func (c LearningController) UploadMaterialPDF(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseMultipartForm(service.MaxPDFMaterialBytes + 1<<20); err != nil {
+		writeAPIError(w, http.StatusBadRequest, errors.New("invalid multipart upload"))
+		return
+	}
+	courseID := strings.TrimSpace(r.FormValue("course_id"))
+	if !c.requireOwnedCourse(w, r, courseID) {
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, errors.New("file is required"))
+		return
+	}
+	defer file.Close()
+	if header.Size > service.MaxPDFMaterialBytes {
+		writeAPIError(w, http.StatusRequestEntityTooLarge, errors.New("pdf exceeds the 10 MB limit"))
+		return
+	}
+	if strings.ToLower(filepath.Ext(header.Filename)) != ".pdf" {
+		writeAPIError(w, http.StatusBadRequest, errors.New("file must have a .pdf extension"))
+		return
+	}
+	conceptID := strings.TrimSpace(r.FormValue("concept_id"))
+	if conceptID == "" {
+		writeAPIError(w, http.StatusBadRequest, errors.New("concept_id is required"))
+		return
+	}
+	body, err := service.ExtractPDFText(file, header.Size)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err)
+		return
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		title = service.SafePDFTitle(header.Filename)
+	}
+	material, err := c.teacher.PublishMaterial(r.Context(), usecase.PublishMaterialRequest{
+		CourseID: courseID, ConceptID: conceptID, Title: title, Body: body,
+		SourceKind: domain.LearningSourceTeacher, SourceRef: header.Filename,
+	})
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err)
 		return

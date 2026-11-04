@@ -37,6 +37,7 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 	// Signup endpoint (uses controller logic)
 	mux.HandleFunc("/api/auth/signup", authCtrl.Signup)
 	mux.HandleFunc("/api/auth/me", authCtrl.Me)
+	mux.HandleFunc("/api/v1/auth/profile", apiAuthenticated(authCtrl.ProfileJSON, identityStore))
 
 	mux.HandleFunc("GET /logout", authCtrl.Logout)
 	// Compatibility profile endpoints remain available while the SPA uses
@@ -82,12 +83,14 @@ func Register(mux *http.ServeMux, deps Dependencies) {
 	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions", apiRoleRequired("student", deps.Learning.StartStudentSessionJSON, identityStore))
 	handleAPI(mux, http.MethodGet, "/api/v1/student/sessions/{session_id}", apiRoleRequired("student", deps.Learning.StudentSessionJSON, identityStore))
 	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions/{session_id}/turns", apiRoleRequired("student", deps.Learning.SendStudentTurnJSON, identityStore))
+	handleAPI(mux, http.MethodPost, "/api/v1/student/agent/next", apiRoleRequired("student", deps.Learning.RunStudentAgentJSON, identityStore))
 	handleAPI(mux, http.MethodPost, "/api/v1/student/sessions/{session_id}/understanding-checks", apiRoleRequired("student", deps.Learning.CheckStudentUnderstandingJSON, identityStore))
 	handleAPI(mux, http.MethodGet, "/api/v1/teacher/dashboard", apiTeacherRoleRequired(deps.Learning.TeacherDashboardJSON, identityStore))
 	handleAPI(mux, http.MethodGet, "/api/v1/student/courses/{course_id}/curriculum", apiRoleRequired("student", deps.Curriculum.StructureJSON, identityStore))
 	handleAPI(mux, http.MethodGet, "/api/v1/teacher/courses/{course_id}/curriculum", apiTeacherRoleRequired(deps.Curriculum.StructureJSON, identityStore))
 	handleAPI(mux, http.MethodPost, "/api/v1/teacher/courses", apiTeacherRoleRequired(deps.Courses.CreateCourseJSON, identityStore))
 	handleAPI(mux, http.MethodPost, "/api/v1/teacher/materials", apiTeacherRoleRequired(deps.Learning.PublishMaterialJSON, identityStore))
+	handleAPI(mux, http.MethodPost, "/api/v1/teacher/materials/pdf", apiTeacherRoleRequired(deps.Learning.UploadMaterialPDF, identityStore))
 	handleAPI(mux, http.MethodPut, "/api/v1/teacher/courses/{course_id}/tutor-policy", apiTeacherRoleRequired(deps.Learning.UpdateTutorPolicyJSON, identityStore))
 
 	// Fallback for unknown API routes

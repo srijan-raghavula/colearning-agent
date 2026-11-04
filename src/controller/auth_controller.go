@@ -68,10 +68,16 @@ func (c AuthController) SignupPage(w http.ResponseWriter, r *http.Request) {
 }
 
 type signupRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
-	Name     string `json:"name"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	Role            string `json:"role"`
+	Name            string `json:"name"`
+	AcademicProgram string `json:"academic_program"`
+	Branch          string `json:"branch"`
+	Semester        int    `json:"semester"`
+	AcademicYear    string `json:"academic_year"`
+	Department      string `json:"department"`
+	TeachingTitle   string `json:"teaching_title"`
 }
 
 type loginRequest struct {
@@ -104,13 +110,30 @@ func (c AuthController) Signup(w http.ResponseWriter, r *http.Request) {
 		writeAuthFailure(w, r, http.StatusBadRequest, "Choose student or teacher as your role.")
 		return
 	}
+	req.AcademicProgram = strings.TrimSpace(req.AcademicProgram)
+	req.Branch = strings.TrimSpace(req.Branch)
+	req.AcademicYear = strings.TrimSpace(req.AcademicYear)
+	req.Department = strings.TrimSpace(req.Department)
+	req.TeachingTitle = strings.TrimSpace(req.TeachingTitle)
+	if req.Role == string(domain.RoleStudent) && (req.AcademicProgram == "" || req.Branch == "" || req.Semester < 1 || req.AcademicYear == "") {
+		writeAuthFailure(w, r, http.StatusBadRequest, "Student workspaces require academic program, branch, semester and academic year.")
+		return
+	}
+	if req.Role == string(domain.RoleTeacher) && (req.Department == "" || req.TeachingTitle == "") {
+		writeAuthFailure(w, r, http.StatusBadRequest, "Teacher workspaces require department and teaching title.")
+		return
+	}
 	var randomID [16]byte
 	if _, err := rand.Read(randomID[:]); err != nil {
 		writeAuthFailure(w, r, http.StatusInternalServerError, "Account creation failed. Please try again.")
 		return
 	}
 	id := fmt.Sprintf("%s-%x", req.Role, randomID[:])
-	account := auth.Account{ID: id, Email: req.Email, Role: req.Role, Name: req.Name}
+	account := auth.Account{User: domain.User{ID: id, Email: req.Email, Role: domain.UserRole(req.Role), Name: req.Name}, AcademicProgram: req.AcademicProgram, Branch: req.Branch, Semester: req.Semester, AcademicYear: req.AcademicYear, Department: req.Department, TeachingTitle: req.TeachingTitle}
+	if err := account.Validate(); err != nil {
+		writeAuthFailure(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := auth.SignupWithStore(r.Context(), c.accounts, account, req.Password); err != nil {
 		writeAuthFailure(w, r, http.StatusConflict, "Could not create account. This email may already be registered.")
 		return
@@ -182,10 +205,113 @@ func (c AuthController) Me(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "authentication required"})
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{
-		"id": identity.ID, "name": identity.Name, "email": identity.Email,
-		"role": identity.Role, "auth_version": identity.AuthVersion,
-	}})
+	if c.profileStore == nil {
+		http.Error(w, `{"error":"account service unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	account, found, lookupErr := c.profileStore.FindAccountByID(r.Context(), identity.ID)
+	if lookupErr != nil || !found {
+		http.Error(w, `{"error":"account not found"}`, http.StatusUnauthorized)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"user": profileDTO(account)})
+}
+
+func (c AuthController) ProfileJSON(w http.ResponseWriter, r *http.Request) {
+	identity, err := auth.IdentityFromRequestWithStore(r, mustIdentityStore(c.accounts))
+	if err != nil {
+		writeAPIError(w, http.StatusUnauthorized, errors.New("authentication required"))
+		return
+	}
+	if c.profileStore == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, errors.New("profile service is unavailable"))
+		return
+	}
+	if r.Method == http.MethodPut || r.Method == http.MethodPatch {
+		var request profileJSONRequest
+		if !decodeJSON(w, r, &request) {
+			return
+		}
+		account, found, lookupErr := c.profileStore.FindAccountByID(r.Context(), identity.ID)
+		if lookupErr != nil || !found {
+			writeAPIError(w, http.StatusNotFound, errors.New("account not found"))
+			return
+		}
+		account.Name = strings.TrimSpace(request.Name)
+		account.AcademicProgram = strings.TrimSpace(request.AcademicProgram)
+		account.Branch = strings.TrimSpace(request.Branch)
+		account.Semester = request.Semester
+		account.AcademicYear = strings.TrimSpace(request.AcademicYear)
+		account.Department = strings.TrimSpace(request.Department)
+		account.TeachingTitle = strings.TrimSpace(request.TeachingTitle)
+		if account.Name == "" || len([]rune(account.Name)) > 100 || len([]rune(account.AcademicProgram)) > 120 || len([]rune(account.Branch)) > 120 || len([]rune(account.AcademicYear)) > 40 || len([]rune(account.Department)) > 120 || len([]rune(account.TeachingTitle)) > 80 || account.Semester < 0 || account.Semester > 20 {
+			writeAPIError(w, http.StatusBadRequest, errors.New("check your profile details and try again"))
+			return
+		}
+		if err := c.profileStore.UpdateAccountProfile(r.Context(), account); err != nil {
+			writeAPIError(w, http.StatusInternalServerError, errors.New("could not save profile"))
+			return
+		}
+		token, tokenErr := auth.GenerateToken(account.ID, account.Role, account.Email, account.Name, account.AuthVersion)
+		if tokenErr != nil {
+			writeAPIError(w, http.StatusInternalServerError, errors.New("profile saved but session could not be refreshed"))
+			return
+		}
+		setAuthCookie(w, r, token)
+		writeJSON(w, http.StatusOK, map[string]any{"user": profileDTO(account)})
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodPut+", "+http.MethodPatch)
+		writeAPIError(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	account, found, err := c.profileStore.FindAccountByID(r.Context(), identity.ID)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, errors.New("could not load profile"))
+		return
+	}
+	if !found {
+		writeAPIError(w, http.StatusNotFound, errors.New("account not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": profileDTO(account)})
+}
+
+type profileJSONRequest struct {
+	Name            string `json:"name"`
+	AcademicProgram string `json:"academic_program"`
+	Branch          string `json:"branch"`
+	Semester        int    `json:"semester"`
+	AcademicYear    string `json:"academic_year"`
+	Department      string `json:"department"`
+	TeachingTitle   string `json:"teaching_title"`
+}
+
+func profileDTO(account auth.Account) map[string]any {
+	profile := map[string]any{}
+	if account.Role == "student" {
+		profile = map[string]any{
+			"academic_program": account.AcademicProgram,
+			"branch":           account.Branch,
+			"semester":         account.Semester,
+			"academic_year":    account.AcademicYear,
+		}
+	} else {
+		profile = map[string]any{
+			"department":     account.Department,
+			"teaching_title": account.TeachingTitle,
+		}
+	}
+	return map[string]any{
+		"id": account.ID, "name": account.Name, "email": account.Email,
+		"role": account.Role, "auth_version": account.AuthVersion, "profile": profile,
+	}
+}
+
+func mustIdentityStore(accounts auth.UserStore) auth.IdentityStore {
+	store, _ := accounts.(auth.IdentityStore)
+	return store
 }
 
 func decodeAuthRequest(w http.ResponseWriter, r *http.Request, target any) error {

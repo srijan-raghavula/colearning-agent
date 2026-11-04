@@ -23,9 +23,42 @@ POST /api/auth/signup
 GET  /profile
 POST /profile/password
 GET  /logout
+GET  /api/v1/auth/profile
+PUT  /api/v1/auth/profile
 ```
 
 Login and signup set the `auth_token` HttpOnly cookie. The browser UI redirects to the workspace for the account role. The profile page shows the account name, email, role, and account ID. Its password-change form verifies the current password, checks the new password confirmation, and revokes previously issued sessions for the account.
+
+Signup requires the shared identity fields (`role`, `name`, `email`, and
+`password`) plus the complete role-specific profile. Students provide
+`academic_program`, `branch`, `semester`, and `academic_year`; teachers provide
+`department` and `teaching_title`. The browser collects these fields in staged
+two- or three-field steps, while the API accepts one final JSON request.
+
+The versioned profile endpoint uses one shared user envelope for both roles:
+
+```json
+{
+  "user": {
+    "id": "S-001",
+    "name": "Alex Morgan",
+    "email": "student@demo.edu",
+    "role": "student",
+    "auth_version": 1,
+    "profile": {
+      "academic_program": "BSc Computer Science",
+      "branch": "Systems",
+      "semester": 3,
+      "academic_year": "2026"
+    }
+  }
+}
+```
+
+Teacher profiles use the same envelope and replace the role-specific fields
+with `department` and `teaching_title`. `PUT` accepts the same `user` profile
+fields as a flat JSON object, refreshes the session cookie, and returns the
+updated envelope.
 
 ## Student dashboard
 
@@ -236,6 +269,38 @@ Content-Type: application/json
 For an external source, provide `source_kind: "external"` and an HTTP(S) `source_ref`. The first slice stores and labels the reference; a production source-ingestion adapter must fetch, normalize, and index the content under the same contract.
 
 Successful response: `201 Created` with the published `LearningMaterial`.
+
+## Upload PDF learning material
+
+```http
+POST /api/v1/teacher/materials/pdf
+Content-Type: multipart/form-data
+```
+
+Form fields are `course_id`, `concept_id`, and optional `title`; upload the
+teacher source as `file`. PDF files are limited to 10 MB, text is extracted
+locally, and the resulting published material is available to the grounded
+tutor with the original filename as its source reference.
+
+## Run the student learning agent
+
+```http
+POST /api/v1/student/agent/next
+Content-Type: application/json
+```
+
+```json
+{
+  "course_id": "course-algebra-foundations",
+  "session_id": "optional-existing-session",
+  "mode": "guided"
+}
+```
+
+The endpoint selects or resumes the student's current learning session,
+grounds the tutor in course materials and progress, and returns the next
+agent-generated learning action using the same turn and progress contract as
+the interactive tutor.
 
 ## Update tutor policy
 

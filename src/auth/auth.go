@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/srijan-raghavula/colearning-agent/src/domain"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -44,11 +45,8 @@ func CheckPassword(hash, password string) bool {
 }
 
 type Account struct {
-	ID              string
-	Email           string
+	domain.User
 	PasswordHash    string
-	Role            string
-	Name            string
 	AcademicProgram string
 	Branch          string
 	Semester        int
@@ -56,6 +54,26 @@ type Account struct {
 	Department      string
 	TeachingTitle   string
 	AuthVersion     int
+}
+
+func (a Account) Validate() error {
+	if err := a.User.Validate(); err != nil {
+		return err
+	}
+	if a.Role == string(domain.RoleStudent) {
+		return (domain.StudentProfile{
+			User:            a.User,
+			AcademicProgram: a.AcademicProgram,
+			Branch:          a.Branch,
+			Semester:        a.Semester,
+			AcademicYear:    a.AcademicYear,
+		}).Validate()
+	}
+	return (domain.TeacherProfile{
+		User:          a.User,
+		Department:    a.Department,
+		TeachingTitle: a.TeachingTitle,
+	}).Validate()
 }
 
 type Identity struct {
@@ -144,6 +162,9 @@ type UserStore interface {
 func SignupWithStore(ctx context.Context, store UserStore, account Account, password string) error {
 	if store == nil {
 		return errors.New("account store is not configured")
+	}
+	if err := account.Validate(); err != nil {
+		return err
 	}
 	hash, err := HashPassword(password)
 	if err != nil {
