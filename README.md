@@ -55,6 +55,7 @@ src/
   routes/                      # route registration and identity-based role middleware
   service/                     # tutor response policy and legacy evaluator
   frontend/                    # standalone SPA shell, browser JavaScript, and CSS
+    app/                       # shared client core, shell, and role-specific page modules
   templates/                   # legacy server-rendered views retained for compatibility
   usecase/                     # student/teacher learning workflows
   view/                        # buffered template rendering
