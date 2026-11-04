@@ -71,6 +71,17 @@ func authenticated(next http.HandlerFunc, stores ...auth.IdentityStore) http.Han
 	}
 }
 
+func apiAuthenticated(next http.HandlerFunc, stores ...auth.IdentityStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		identity, err := auth.IdentityFromRequestWithStore(r, firstIdentityStore(stores))
+		if err != nil {
+			writeAPIError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		next(w, r.WithContext(auth.WithIdentity(r.Context(), identity)))
+	}
+}
+
 func isTeacherRole(role string) bool {
 	return role == "teacher" || role == "faculty"
 }

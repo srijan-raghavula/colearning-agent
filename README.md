@@ -29,7 +29,10 @@ The application includes:
 
 The primary product UI is now a standalone JavaScript frontend. It is served as
 an application shell from `src/frontend`, authenticates through the JSON
-session endpoints, and renders student and teacher workspaces from `/api/v1`.
+session endpoints and HttpOnly session token, and renders student and teacher
+workspaces from `/api/v1`. Both roles use the same file-explorer layout,
+profile surface, course context picker, and persisted light/dark theme; role
+customizations are applied inside that shared shell.
 The older template controllers remain available internally for compatibility
 and migration safety, but are no longer the primary browser route.
 
@@ -110,6 +113,8 @@ The stable versioned contract is documented in [`docs/api.md`](docs/api.md).
 
 ```text
 GET  /healthz
+GET  /api/v1/auth/profile
+PUT  /api/v1/auth/profile
 GET  /api/v1/student/dashboard
 GET  /api/v1/student/courses/{course_id}/curriculum
 POST /api/v1/student/sessions

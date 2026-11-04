@@ -13,8 +13,27 @@ All primary product pages share:
 - JSON-backed browser rendering with explicit loading, empty, and error states
 - signed-in account identity with role-aware student and teacher routes
 - a profile page with the current account name, email, role, and ID
+- a shared file-explorer course shell with role-specific content/actions
+- a persisted light/dark theme preference
+- an HttpOnly session token reused by every authenticated profile/API request
 
-The stylesheet lives at `src/templates/assets/app.css` and is served by the application at `/static/assets/app.css`.
+The primary stylesheet and behavior live at `src/frontend/assets/app.css` and
+`src/frontend/assets/app.js`. The older server-rendered stylesheet remains only
+for compatibility routes.
+
+## Workspace onboarding
+
+Signup is a staged behavior, not a single large form:
+
+1. choose student or teacher
+2. provide name and email
+3. provide a password
+4. provide role-specific details in two-field pages
+
+Student details are academic program/branch followed by semester/academic year.
+Teacher details are department/teaching title. The API validates the complete
+role-specific profile before creating the account and sets the session token
+immediately.
 
 ## Student surfaces
 

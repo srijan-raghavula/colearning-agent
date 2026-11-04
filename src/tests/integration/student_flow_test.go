@@ -24,6 +24,7 @@ func TestEndToEndStudentFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err != nil {
 		t.Fatalf("locate project root: %v", err)
 	}
@@ -574,5 +575,50 @@ func TestEndToEndStudentFlow(t *testing.T) {
 	studentOverviewAfterApproval := doRequest(http.MethodGet, "/student", "")
 	if studentOverviewAfterApproval.Code != http.StatusOK || !strings.Contains(studentOverviewAfterApproval.Body.String(), "Physics basics") || !strings.Contains(studentOverviewAfterApproval.Body.String(), "Intro to astronomy") || !strings.Contains(studentOverviewAfterApproval.Body.String(), "Professor") {
 		t.Fatalf("student overview did not show all approved courses: status %d", studentOverviewAfterApproval.Code)
+	}
+}
+
+func TestWorkspaceSignupPersistsRoleSpecificProfile(t *testing.T) {
+	projectRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(projectRoot)
+	dataDir := t.TempDir()
+	t.Setenv("COLEARN_DB_PATH", filepath.Join(dataDir, "colearning.db"))
+	t.Setenv("LEARNING_STORE_PATH", filepath.Join(dataDir, "learning-state.json"))
+	t.Setenv("COLEARN_JWT_SECRET", strings.Repeat("s", 32))
+	app, err := bootstrap.NewApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+
+	mux := http.NewServeMux()
+	routes.Register(mux, app.Routes)
+	body := `{"role":"student","name":"New Student","email":"new.student@example.com","password":"student123","academic_program":"Computer Science","branch":"Systems","semester":3,"academic_year":"2026"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/signup", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("signup status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var cookie *http.Cookie
+	for _, candidate := range recorder.Result().Cookies() {
+		if candidate.Name == "auth_token" {
+			cookie = candidate
+		}
+	}
+	if cookie == nil {
+		t.Fatal("signup did not preserve a session token")
+	}
+	profile := httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
+	profile.AddCookie(cookie)
+	profileRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(profileRecorder, profile)
+	if profileRecorder.Code != http.StatusOK || !strings.Contains(profileRecorder.Body.String(), `"academic_program":"Computer Science"`) {
+		t.Fatalf("profile did not contain persisted role-specific data: %s", profileRecorder.Body.String())
 	}
 }
